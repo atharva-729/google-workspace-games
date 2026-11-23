@@ -45,14 +45,9 @@ async function start() {
     if (BK.on) for (let f = 0; f < sim && BK.on && !BK.over; f++) { BK.paddle.x = Math.max(0, Math.min(BK.W - BK.paddle.w, (BK.balls[0] ? BK.balls[0].x : BK.W / 2) - BK.paddle.w / 2)); bkUpdate(1 / 60); }
     if (BK.on) bkDraw();
     if (params.has('end') && BK.on) endBreakout(false);
-    // Mail Defense autoplayer for tests: right key on the target once it's halfway down (every 7th answer is wrong)
+    // Mail Defense autoplayer for tests
     if (DF.on) {
-      let n = 0;
-      for (let f = 0; f < sim && DF.on && !DF.over; f++) {
-        dfUpdate(1 / 60);
-        const t = dfTarget();
-        if (t && t.y > DF.lineY * 0.5) dfAct(++n % 7 ? DF_RIGHT[t.t.kind] : 'read');
-      }
+      for (let f = 0; f < sim && DF.on && !DF.over; f++) { dfAuto(); dfUpdate(1 / 60); }
       dfDraw();
       if (params.has('end') && DF.on) endDefense(false);
     }
@@ -379,7 +374,7 @@ const KEYBARS = {
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
   breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
-  defense: [['d', 'delete (promo)'], ['e', 'archive (update)'], ['r', 'save for reply (person)'], ['Space', 'read & keep'], ['P', 'pause'], ['Esc', 'finish & review'], ['', 'never delete a 👤 person: it costs a life']],
+  defense: [['A / D', 'move'], ['S', 'bin it (promo → Trash, update → Archive)'], ['F', 'keep it (👤 people → star for reply)'], ['', 'hold to auto-fire'], ['P', 'pause'], ['Esc', 'finish & review']],
   review: [['Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;
