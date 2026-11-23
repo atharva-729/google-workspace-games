@@ -64,7 +64,12 @@ const GmailMail = (() => {
     const first = msgs[0], last = msgs[msgs.length - 1];
     const labels = new Set(msgs.flatMap((m) => m.labelIds || []));
     const from = parseFrom(header(last, 'From'));
+    const unsub = msgs.map((m) => header(m, 'List-Unsubscribe')).find(Boolean) || '';
+    const cat = labels.has('CATEGORY_PROMOTIONS') ? 'promo'
+      : (labels.has('CATEGORY_UPDATES') || labels.has('CATEGORY_SOCIAL') || labels.has('CATEGORY_FORUMS')) ? 'update' : 'personal';
     return {
+      category: cat,
+      listUnsub: (unsub.match(/<(https?:[^>]+)>/) || [])[1] || (unsub ? 'yes' : ''),
       id: t.id,
       from: from.name,
       fromEmail: from.email,
@@ -106,9 +111,10 @@ const GmailMail = (() => {
       if (token) await new Promise((res) => chrome.identity.removeCachedAuthToken({ token }, res));
       token = null;
     },
-    async listThreads({ view, q, pageToken }) {
-      const params = new URLSearchParams({ maxResults: String(PAGE) });
+    async listThreads({ view, q, pageToken, max }) {
+      const params = new URLSearchParams({ maxResults: String(max || PAGE) });
       if (view === 'search') params.set('q', q);
+      else if (view === 'unread') params.set('q', 'is:unread in:inbox');
       else params.set('labelIds', view === 'starred' ? 'STARRED' : 'INBOX');
       if (pageToken) params.set('pageToken', pageToken);
       const [res, inbox] = await Promise.all([
@@ -117,7 +123,7 @@ const GmailMail = (() => {
       ]);
       const ids = (res.threads || []).map((t) => t.id);
       const full = await mapLimit(ids, 6, (id) =>
-        api('/threads/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=Subject'));
+        api('/threads/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=List-Unsubscribe'));
       return {
         threads: full.map(summary),
         total: inbox ? inbox.threadsTotal : res.resultSizeEstimate || ids.length,
@@ -130,9 +136,32 @@ const GmailMail = (() => {
         subject: header(t.messages[0], 'Subject'),
         messages: t.messages.map((m) => {
           const f = parseFrom(header(m, 'From'));
-          return { from: f.name, fromEmail: f.email, to: header(m, 'To'), date: Number(m.internalDate), ...findBody(m.payload) };
+          return {
+            from: f.name, fromEmail: f.email, fromRaw: header(m, 'From'), replyTo: header(m, 'Reply-To'),
+            to: header(m, 'To'), messageId: header(m, 'Message-ID') || header(m, 'Message-Id'),
+            references: header(m, 'References'), date: Number(m.internalDate), ...findBody(m.payload),
+          };
         }),
       };
+    },
+    trash(id) { return api('/threads/' + id + '/trash', { method: 'POST' }); },
+    untrash(id) { return api('/threads/' + id + '/untrash', { method: 'POST' }); },
+    // r: { threadId, to, subject, inReplyTo, references, body }
+    send(r) {
+      const enc = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+      const lines = [
+        'To: ' + r.to,
+        'Subject: =?UTF-8?B?' + enc(r.subject) + '?=',
+        r.inReplyTo ? 'In-Reply-To: ' + r.inReplyTo : '',
+        r.inReplyTo ? 'References: ' + ((r.references ? r.references + ' ' : '') + r.inReplyTo) : '',
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+      ].filter(Boolean);
+      const CRLF = String.fromCharCode(13, 10);
+      const raw = lines.join(CRLF) + CRLF + CRLF + enc(r.body).replace(/.{76}/g, '$&' + CRLF);
+      const b64url = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      return api('/messages/send', { method: 'POST', body: JSON.stringify({ raw: b64url, threadId: r.threadId }) });
     },
     modify(id, add = [], remove = []) {
       return api('/threads/' + id + '/modify', {

@@ -6,10 +6,7 @@ const store = {
 };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-const S = { backend: null, view: 'inbox', q: '', threads: [], total: 0, cursor: 0, open: null, undo: null, busy: false };
-const POINTS = { archive: 10, star: 5, read: 3 };
-const COMBO_MS = 4000;
-const G = { on: false, score: 0, combo: 1, maxCombo: 1, lastAt: 0, cleared: 0, startAt: 0, startTotal: 0, scored: new Set(), best: store.get('best') || 0 };
+const S = { backend: null, who: '', view: 'inbox', q: '', threads: [], total: 0, cursor: 0, open: null, undo: null, busy: false };
 
 // ---------------------------------------------------------------- start
 function clientIdMissing() {
@@ -26,6 +23,7 @@ async function enter(mode, interactive = true) {
   S.backend = mode === 'live' ? GmailMail : DemoMail;
   const who = await S.backend.connect(interactive);
   store.set('mode', mode);
+  S.who = who;
   $('#who').textContent = who;
   $('#landing').classList.add('hidden');
   $('#app').classList.remove('hidden');
@@ -36,9 +34,9 @@ async function start() {
   const params = new URLSearchParams(location.search);
   if (params.has('demo')) {
     await enter('demo');
-    // test hook: ?demo&keys=gjee replays keystrokes 150ms apart
+    // test hook: ?demo&keys=gjee replays keystrokes 450ms apart
     for (const k of params.get('keys') || '') {
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 450));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: k === '~' ? 'Escape' : k }));
     }
     return;
@@ -57,7 +55,7 @@ $('#connectBtn').onclick = async () => {
   try { await enter('live', true); }
   catch (e) { showLanding('Could not connect: ' + e.message + (clientIdMissing() ? '\nThe client ID in manifest.json is still the placeholder.' : '')); }
 };
-$('#switchBtn').onclick = async () => { await S.backend.signOut(); store.set('mode', null); if (G.on) toggleGame(); showLanding(); };
+$('#switchBtn').onclick = async () => { await S.backend.signOut(); store.set('mode', null); if (T.active) exitTriage(); showLanding(); };
 
 // ---------------------------------------------------------------- list
 async function loadList() {
@@ -74,7 +72,6 @@ async function loadList() {
   }
   S.busy = false;
   renderList();
-  hud();
 }
 
 function fmtDate(ms) {
@@ -90,7 +87,7 @@ function rowHtml(t, i) {
     <span class="from">${esc(t.from)}${t.count > 1 ? ` <small>${t.count}</small>` : ''}</span>
     <span class="text"><span class="subj">${esc(t.subject || '(no subject)')}</span><span class="snip"> — ${esc(t.snippet)}</span></span>
     <span class="date">${fmtDate(t.date)}</span>
-    <span class="acts"><button data-act="archive" title="Archive (e)">Archive</button><button data-act="read" title="Toggle read (u)">${t.unread ? 'Mark read' : 'Mark unread'}</button></span>
+    <span class="acts"><button data-act="archive" title="Archive (e)">Archive</button><button data-act="delete" title="Delete (d)">Delete</button><button data-act="read" title="Toggle read (u)">${t.unread ? 'Mark read' : 'Mark unread'}</button></span>
   </li>`;
 }
 
@@ -136,38 +133,43 @@ function rowEl(i) { return document.querySelector(`.row[data-i="${i}"]`); }
 async function doAction(kind, i = S.cursor) {
   const t = S.threads[i];
   if (!t) return;
-  const anchor = S.open ? $('#threadView .thread-head') : rowEl(i);
-  if (kind === 'archive') {
-    if (!t.inInbox && S.view !== 'inbox') return toast('Already archived');
-    award(t, 'archive', anchor);
-    t.inInbox = false;
-    if (S.view === 'inbox') {
+  if (kind === 'reply') return openReply();
+  if (kind === 'archive' || kind === 'delete') {
+    if (kind === 'archive' && !t.inInbox && S.view !== 'inbox') return toast('Already archived');
+    const removeRow = kind === 'delete' || S.view === 'inbox';
+    if (removeRow) {
       const el = rowEl(i);
       if (el && !S.open) { el.classList.add('leaving'); await new Promise((r) => setTimeout(r, 170)); }
       S.threads.splice(i, 1);
       S.total = Math.max(0, S.total - 1);
       S.cursor = Math.min(i, Math.max(0, S.threads.length - 1));
     }
+    if (kind === 'archive') t.inInbox = false;
     if (S.open) closeThread(false);
-    renderList(); hud();
-    S.undo = { t, i };
-    toast('Archived', 'Undo', undoArchive);
-    try { await S.backend.modify(t.id, [], ['INBOX']); }
-    catch (e) { toast('Archive failed: ' + e.message); await loadList(); return; }
-    if (S.view === 'inbox' && !S.threads.length) onPageCleared();
+    renderList();
+    S.undo = { run: async () => {
+      if (removeRow) { S.threads.splice(Math.min(i, S.threads.length), 0, t); S.total++; S.cursor = i; }
+      if (kind === 'archive') t.inInbox = true;
+      renderList();
+      try { kind === 'delete' ? await S.backend.untrash(t.id) : await S.backend.modify(t.id, ['INBOX'], []); }
+      catch (e) { toast('Undo failed: ' + e.message); loadList(); }
+    } };
+    toast(kind === 'delete' ? 'Moved to Trash' : 'Archived', 'Undo', runUndo);
+    try { kind === 'delete' ? await S.backend.trash(t.id) : await S.backend.modify(t.id, [], ['INBOX']); }
+    catch (e) { toast(kind + ' failed: ' + e.message); await loadList(); }
   } else if (kind === 'star') {
     t.starred = !t.starred;
-    if (t.starred) award(t, 'star', anchor);
     afterChange(t);
     sync(t, t.starred ? ['STARRED'] : [], t.starred ? [] : ['STARRED']);
   } else if (kind === 'read') {
     t.unread = !t.unread;
-    if (!t.unread) award(t, 'read', anchor);
     afterChange(t);
     sync(t, t.unread ? ['UNREAD'] : [], t.unread ? [] : ['UNREAD']);
     if (t.unread && S.open) closeThread();
   }
 }
+
+function runUndo() { const u = S.undo; S.undo = null; if (u) { hideToast(); u.run(); } }
 
 function afterChange(t) {
   if (S.open && S.open.id === t.id) renderThreadHead();
@@ -178,21 +180,22 @@ async function sync(t, add, remove) {
   catch (e) { toast('Update failed: ' + e.message); loadList(); }
 }
 
-async function undoArchive() {
-  const u = S.undo;
-  if (!u) return;
-  S.undo = null;
-  hideToast();
-  u.t.inInbox = true;
-  if (S.view === 'inbox') { S.threads.splice(Math.min(u.i, S.threads.length), 0, u.t); S.total++; S.cursor = u.i; renderList(); hud(); }
-  try { await S.backend.modify(u.t.id, ['INBOX'], []); } catch (e) { toast('Undo failed: ' + e.message); loadList(); }
-}
-
-async function onPageCleared() {
-  await loadList();
-  if (S.threads.length) {
-    if (G.on) { G.score += 50; floatText($('#hud'), 'Page cleared! +50'); hud(); }
-  } else if (G.on) win();
+// reply from the thread view (r)
+async function openReply(initial) {
+  const t = S.open;
+  if (!t || !S.openFull) return toast('Open an email to reply');
+  const tgt = Compose.target(S.openFull, S.who);
+  if (tgt.noReply) toast('Heads up: that looks like a no-reply address');
+  const box = $('#replyBox');
+  Compose.mount(box, tgt, {
+    initial,
+    onCancel: () => { box.innerHTML = ''; },
+    onSend: (text) => {
+      box.innerHTML = '';
+      queueSend(t.id, tgt, text, (body) => { if (S.open === t) openReply(body); });
+    },
+  });
+  box.scrollIntoView({ block: 'nearest' });
 }
 
 // ---------------------------------------------------------------- thread view
@@ -207,7 +210,8 @@ async function openThread(i) {
   renderThreadHead();
   window.scrollTo(0, 0);
   let full;
-  try { full = await S.backend.getThread(t.id); }
+  S.openFull = null;
+  try { full = await S.backend.getThread(t.id); S.openFull = full; }
   catch (e) { tv.querySelector('.status').textContent = 'Error: ' + e.message; return; }
   if (S.open !== t) return;
   tv.querySelector('.status').remove();
@@ -223,6 +227,7 @@ async function openThread(i) {
     card.appendChild(fr);
     tv.appendChild(card);
   });
+  const rb = document.createElement('div'); rb.id = 'replyBox'; tv.appendChild(rb);
   if (t.unread) { t.unread = false; renderThreadHead(); sync(t, [], ['UNREAD']); }
 }
 
@@ -231,7 +236,9 @@ function renderThreadHead() {
   const head = $('#threadView .thread-head');
   if (!t || !head) return;
   head.innerHTML = `<button data-act="back">← Back <small>Esc</small></button>
+    <button data-act="reply" class="primary">Reply <small>r</small></button>
     <button data-act="archive">Archive <small>e</small></button>
+    <button data-act="delete">Delete <small>d</small></button>
     <button data-act="star">${t.starred ? '★ Starred' : '☆ Star'} <small>s</small></button>
     <button data-act="read">${t.unread ? 'Mark read' : 'Mark unread'} <small>u</small></button>
     <h1>${esc(t.subject || '(no subject)')}</h1>`;
@@ -252,60 +259,8 @@ function closeThread(render = true) {
   if (render) { renderList(); const el = document.querySelector('.row.sel'); if (el) el.scrollIntoView({ block: 'nearest' }); }
 }
 
-// ---------------------------------------------------------------- game mode
-function toggleGame() {
-  G.on = !G.on;
-  $('#gameToggle').classList.toggle('on', G.on);
-  $('#gameToggle').textContent = G.on ? '■ Stop game' : '▶ Game mode';
-  $('#hud').classList.toggle('hidden', !G.on);
-  if (G.on) {
-    Object.assign(G, { score: 0, combo: 1, maxCombo: 1, lastAt: 0, cleared: 0, startAt: Date.now(), scored: new Set() });
-    if (S.view !== 'inbox') setView('inbox');
-    G.startTotal = S.total;
-    toast('Game on: clear your inbox! e archive · s star · u read');
-  }
-  hud();
-}
-$('#gameToggle').onclick = toggleGame;
-
-function award(t, kind, anchor) {
-  if (!G.on) return;
-  const key = t.id + ':' + kind;
-  if (G.scored.has(key)) return;
-  G.scored.add(key);
-  const now = Date.now();
-  G.combo = now - G.lastAt < COMBO_MS ? Math.min(G.combo + 1, 8) : 1;
-  G.maxCombo = Math.max(G.maxCombo, G.combo);
-  G.lastAt = now;
-  const pts = POINTS[kind] * G.combo;
-  G.score += pts;
-  if (kind === 'archive') G.cleared++;
-  floatText(anchor, '+' + pts + (G.combo > 1 ? '  x' + G.combo : ''));
-  const c = $('.stat.combo'); c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
-  hud();
-}
-
-function hud() {
-  if (!G.on) return;
-  $('#score').textContent = G.score;
-  $('#cleared').textContent = G.cleared;
-  $('#best').textContent = Math.max(G.best, G.score);
-  const left = S.view === 'inbox' ? S.total : null;
-  const all = Math.max(G.startTotal, G.cleared + (left || 0)) || 1;
-  $('#progressFill').style.width = (100 * G.cleared / all).toFixed(1) + '%';
-  $('#progressText').textContent = left == null ? 'Inbox progress' : `${left} left to Inbox Zero`;
-}
-
-setInterval(() => {
-  if (!G.on) return;
-  const s = Math.floor((Date.now() - G.startAt) / 1000);
-  $('#clock').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-  const rest = Math.max(0, 1 - (Date.now() - G.lastAt) / COMBO_MS);
-  if (rest === 0 && G.combo > 1) G.combo = 1;
-  $('#combo').textContent = 'x' + G.combo;
-  $('#comboBar').style.width = (G.lastAt ? rest * 100 : 0) + '%';
-}, 100);
-
+// ---------------------------------------------------------------- effects
+$('#gameToggle').onclick = startTriage;
 function floatText(anchor, text) {
   const r = (anchor || $('#list')).getBoundingClientRect();
   const f = document.createElement('div');
@@ -315,24 +270,6 @@ function floatText(anchor, text) {
   f.style.top = (r.top + 4) + 'px';
   document.body.appendChild(f);
   setTimeout(() => f.remove(), 950);
-}
-
-function win() {
-  const secs = Math.floor((Date.now() - G.startAt) / 1000);
-  const newBest = G.score > G.best;
-  if (newBest) { G.best = G.score; store.set('best', G.best); }
-  $('#win').innerHTML = `<div class="panel win">
-    <h1>Inbox Zero!</h1>
-    <div class="big">${G.score}</div>
-    <div>${newBest ? '🏆 New best score' : 'Best: ' + G.best}</div>
-    <div class="stats"><div><b>${G.cleared}</b>cleared</div><div><b>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</b>time</div><div><b>x${G.maxCombo}</b>best combo</div></div>
-    ${S.backend.live ? '' : '<button id="again" class="primary">Play again</button> '}<button id="closeWin">Close</button>
-  </div>`;
-  $('#win').classList.remove('hidden');
-  confetti();
-  $('#closeWin').onclick = () => { $('#win').classList.add('hidden'); if (G.on) toggleGame(); };
-  const again = $('#again');
-  if (again) again.onclick = async () => { $('#win').classList.add('hidden'); DemoMail.reset(); await loadList(); G.on = false; toggleGame(); };
 }
 
 function confetti() {
@@ -368,6 +305,11 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.target.matches && e.target.matches('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
   if ($('#app').classList.contains('hidden')) return;
+  if (!$('#triage').classList.contains('hidden')) {
+    if (T.active) { if (triageKey(e)) e.preventDefault(); }
+    else if (e.key === 'Escape' || e.key === 'Enter') exitTriage();
+    return;
+  }
   if (!$('#help').classList.contains('hidden') || !$('#win').classList.contains('hidden')) {
     if (e.key === 'Escape' || e.key === 'Enter') { $('#help').classList.add('hidden'); $('#win').classList.add('hidden'); }
     return;
@@ -385,10 +327,12 @@ document.addEventListener('keydown', (e) => {
     e: () => doAction('archive'),
     s: () => doAction('star'),
     u: () => doAction('read'),
-    z: () => undoArchive(),
+    z: () => runUndo(),
+    d: () => doAction('delete'),
+    '#': () => doAction('delete'),
+    r: () => (inThread ? openReply() : loadList()),
     '/': () => $('#search').focus(),
-    g: () => toggleGame(),
-    r: () => loadList(),
+    g: () => startTriage(),
     '?': () => $('#help').classList.remove('hidden'),
   };
   if (map[k]) { e.preventDefault(); map[k](); }

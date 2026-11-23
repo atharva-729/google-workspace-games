@@ -9,7 +9,7 @@
 <body>
 <div id="landing" class="landing hidden">
   <h1>Inbox Arcade</h1>
-  <p>Your Gmail, in a new front end. Turn on <b>game mode</b> and race to Inbox Zero.</p>
+  <p>Your Gmail, in a new front end. Start a <b>Triage run</b>: every unread email is a card, and every card needs a decision.</p>
   <div class="landing-btns">
     <button id="connectBtn" class="primary">Connect Gmail</button>
     <button id="demoBtn">Try the demo</button>
@@ -25,26 +25,18 @@
       <button data-view="starred">Starred</button>
     </nav>
     <form id="searchForm"><input id="search" type="search" placeholder="Search mail   /" autocomplete="off"></form>
-    <button id="gameToggle" class="game-btn" title="Inbox Zero game (g)">▶ Game mode</button>
+    <button id="gameToggle" class="game-btn" title="Triage your unread mail as a game (g)">▶ Triage run</button>
     <div class="who"><span id="who"></span><button id="switchBtn" class="link">Switch</button><button id="helpBtn" class="link" title="Shortcuts (?)">?</button></div>
   </header>
 
-  <div id="hud" class="hud hidden">
-    <div class="stat"><b id="score">0</b><span>score</span></div>
-    <div class="stat combo"><b id="combo">x1</b><span>combo</span><i><em id="comboBar"></em></i></div>
-    <div class="stat"><b id="cleared">0</b><span>cleared</span></div>
-    <div class="stat"><b id="clock">0:00</b><span>time</span></div>
-    <div class="progress"><div id="progressFill"></div><span id="progressText"></span></div>
-    <div class="stat"><b id="best">0</b><span>best</span></div>
-  </div>
-
-  <main>
+  <main id="main">
     <section id="listView">
       <div id="listStatus" class="status"></div>
       <ul id="list"></ul>
     </section>
     <section id="threadView" class="hidden"></section>
   </main>
+  <section id="triage" class="hidden"></section>
 </div>
 
 <div id="toast" class="toast hidden"></div>
@@ -59,13 +51,14 @@
       <dt>e</dt><dd>archive</dd>
       <dt>s</dt><dd>star</dd>
       <dt>u</dt><dd>toggle read</dd>
-      <dt>z</dt><dd>undo archive</dd>
+      <dt>r</dt><dd>reply (in an email)</dd>
+      <dt>d / #</dt><dd>delete</dd>
+      <dt>z</dt><dd>undo</dd>
       <dt>/</dt><dd>search</dd>
-      <dt>g</dt><dd>game mode</dd>
-      <dt>r</dt><dd>refresh</dd>
+      <dt>g</dt><dd>start a Triage run</dd>
     </dl>
-    <h2>Game mode</h2>
-    <p>Archive 10 · star 5 · read 3 points, times your combo. Act within 4 seconds to grow the combo (max x8). Each thread scores each action once.</p>
+    <h2>Triage run</h2>
+    <p>Your unread mail, one card at a time. <b>r</b> reply · <b>Space</b> read and keep · <b>e</b> archive · <b>d</b> delete · <b>s</b> star · <b>l</b> later · <b>Shift+D/E</b> sweep a sender. Points depend on the email: reply to people, bin promos, file updates. Fast decisions build a combo.</p>
     <button class="close primary">Got it</button>
   </div>
 </div>
@@ -74,6 +67,8 @@
 
 <script src="demo.js"></script>
 <script src="gmail.js"></script>
+<script src="compose.js"></script>
+<script src="triage.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
