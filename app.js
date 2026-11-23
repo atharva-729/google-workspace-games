@@ -41,9 +41,21 @@ async function start() {
     }
     // test hook: &sim=N runs N Breakout physics frames (headless Chrome barely animates)
     const sim = Number(params.get('sim') || 0);
+    if (sim) await new Promise((r) => setTimeout(r, 700));
     if (BK.on) for (let f = 0; f < sim && BK.on && !BK.over; f++) { BK.paddle.x = Math.max(0, Math.min(BK.W - BK.paddle.w, (BK.balls[0] ? BK.balls[0].x : BK.W / 2) - BK.paddle.w / 2)); bkUpdate(1 / 60); }
     if (BK.on) bkDraw();
     if (params.has('end') && BK.on) endBreakout(false);
+    // Mail Defense autoplayer for tests: right key on the target once it's halfway down (every 7th answer is wrong)
+    if (DF.on) {
+      let n = 0;
+      for (let f = 0; f < sim && DF.on && !DF.over; f++) {
+        dfUpdate(1 / 60);
+        const t = dfTarget();
+        if (t && t.y > DF.lineY * 0.5) dfAct(++n % 7 ? DF_RIGHT[t.t.kind] : 'read');
+      }
+      dfDraw();
+      if (params.has('end') && DF.on) endDefense(false);
+    }
     return;
   }
   const mode = store.get('mode');
@@ -267,6 +279,7 @@ function closeThread(render = true) {
 // ---------------------------------------------------------------- effects
 $('#gameToggle').onclick = startTriage;
 $('#breakoutBtn').onclick = startBreakout;
+$('#defenseBtn').onclick = startDefense;
 function floatText(anchor, text) {
   const r = (anchor || $('#list')).getBoundingClientRect();
   const f = document.createElement('div');
@@ -311,6 +324,11 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.target.matches && e.target.matches('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
   if ($('#app').classList.contains('hidden')) return;
+  if (!$('#defense').classList.contains('hidden')) {
+    if (DF.on) { if (defenseKey(e)) e.preventDefault(); }
+    else if (e.key === 'Escape') exitDefense();
+    return;
+  }
   if (!$('#breakout').classList.contains('hidden')) {
     if (BK.on) { if (breakoutKey(e, true)) e.preventDefault(); }
     else if (e.key === 'Escape') exitBreakout();
@@ -345,6 +363,7 @@ document.addEventListener('keydown', (e) => {
     '/': () => $('#search').focus(),
     g: () => startTriage(),
     b: () => startBreakout(),
+    m: () => startDefense(),
     '?': () => $('#help').classList.remove('hidden'),
   };
   if (map[k]) { e.preventDefault(); map[k](); }
@@ -354,12 +373,13 @@ start();
 
 // ---------------------------------------------------------------- controls bar (bottom)
 const KEYBARS = {
-  list: [['j / k', 'move'], ['Enter', 'open'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'read / unread'], ['z', 'undo'], ['/', 'search'], ['g', 'Triage run'], ['b', 'Breakout'], ['?', 'help']],
+  list: [['j / k', 'move'], ['Enter', 'open'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'read / unread'], ['z', 'undo'], ['/', 'search'], ['g', 'Triage run'], ['b', 'Breakout'], ['m', 'Defense'], ['?', 'help']],
   thread: [['r', 'reply'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'mark unread'], ['j / k', 'next / prev email'], ['z', 'undo'], ['Esc', 'back']],
   triage: [['r', 'reply'], ['Space', 'read & keep'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['l', 'later'], ['Shift+D / E', 'delete / archive all from sender'], ['z', 'undo'], ['Esc', 'finish']],
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
   breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
+  defense: [['d', 'delete (promo)'], ['e', 'archive (update)'], ['r', 'save for reply (person)'], ['Space', 'read & keep'], ['P', 'pause'], ['Esc', 'finish & review'], ['', 'never delete a 👤 person: it costs a life']],
   review: [['Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;
@@ -370,8 +390,9 @@ setInterval(() => {
   if (!appOn) return;
   const inTriage = !$('#triage').classList.contains('hidden');
   const inBreakout = !$('#breakout').classList.contains('hidden');
+  const inDefense = !$('#defense').classList.contains('hidden');
   const composing = !!document.querySelector('.composer');
-  const mode = inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
+  const mode = inDefense ? (DF.on ? 'defense' : 'review') : inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
   if (mode === keybarMode) return;
   keybarMode = mode;
   bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span>${k ? `<kbd>${esc(k)}</kbd> ` : ''}${esc(v)}</span>`).join('');
