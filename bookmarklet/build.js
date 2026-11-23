@@ -18,10 +18,10 @@ const BOOKMARKLETS = [
   {
     name: '🛡️ Mail Defense', id: 'defense',
     image: 'defense.png', alt: 'Mail Defense: emails fall toward your inbox while you shoot them from the bottom',
-    what: 'Your emails fall toward your inbox. Shoot each one with the right decision before it lands. Waves end with a boss: your noisiest sender. It reads your inbox tabs first, which takes a few seconds.',
-    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move (or the arrow keys)'], ['<kbd>H</kbd>', 'reply: stars it so you reply later'], ['<kbd>J</kbd>', 'delete'], ['<kbd>K</kbd>', 'archive'], ['<kbd>L</kbd>', 'keep: stays in the inbox, marked read'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause']],
+    what: 'Your emails fall toward your inbox. Shoot each one with the right decision before it lands. Pick a pace: the emails keep speeding up until its top speed, and you get one shot a second. Waves end with a boss, your noisiest sender, which hovers over you and shoots back. Beat your best score and your most emails cleared. It reads your inbox tabs first, which takes a few seconds.',
+    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move (or the arrow keys)'], ['<kbd>H</kbd>', 'reply: stars it so you reply later'], ['<kbd>J</kbd>', 'delete'], ['<kbd>K</kbd>', 'archive'], ['<kbd>L</kbd>', 'keep: stays in the inbox, marked read'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
     code: () => `(() => {\nconst IA_CSS = ${JSON.stringify(gameCss())};\n${read('defense-page.js')}\n${read('../defense.js')}\n` +
-      `if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense };\nstartDefense();\n})();`,
+      `if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense, pickPace, paceNow };\nstartDefense();\n})();`,
   },
 ];
 

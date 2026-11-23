@@ -179,3 +179,10 @@ main { max-width: 1100px; margin: 16px auto; padding: 0 20px 80px; }
 .df-group summary { cursor: pointer; }
 .df-group ul { margin: 8px 0 2px; padding-left: 22px; max-height: 220px; overflow: auto; font-size: .88rem; }
 .df-group li { margin: 2px 0; }
+.df-levels { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 18px 0; }
+.df-level { width: 200px; padding: 14px 16px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+.df-level b { font-size: 1.05rem; }
+.df-level small { color: var(--dim); }
+.df-level.last { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.df-cleared { margin-top: 6px; color: var(--dim); }
+.df-cleared b { color: var(--text); font-size: 1.2rem; }

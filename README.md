@@ -6,7 +6,7 @@ Clear your Gmail by playing a game. The games run as **bookmarklets**: you drag 
 
 | Game | What you do |
 |---|---|
-| 🛡️ **Mail Defense** | Your emails fall toward your inbox. Shoot each one before it lands: `H` reply, `J` delete, `K` archive, `L` keep. Move with `A`/`D`, finish with `Q`. Waves end with a boss, your noisiest sender. |
+| 🛡️ **Mail Defense** | Your emails fall toward your inbox. Shoot each one before it lands: `H` reply, `J` delete, `K` archive, `L` keep. Move with `A`/`D`, finish with `Q`. Pick a pace (Relaxed, Normal, Fast): the emails speed up until its top speed, and you get one shot a second. Waves end with a boss, your noisiest sender, which hovers over you and shoots back. Each pace keeps two bests: points, and emails cleared. |
 | 🧱 Promo Breakout | Next: your inbox as a brick wall. It already runs in the extension below. |
 
 ## How the bookmarklet works

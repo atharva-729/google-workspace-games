@@ -1,6 +1,8 @@
 // Mail Defense: emails fall toward your inbox. Move with A/D, shoot with the right hand:
 // H reply (star to reply later) · J delete (Trash) · K archive · L keep (stays in the inbox, marked read).
-// Q or Esc finishes the run. Waves end with a boss: your noisiest sender. Nothing changes in Gmail until
+// Q or Esc finishes the run. You pick a pace; the emails keep falling faster until that pace's top speed,
+// then hold there. One shot a second, always. Waves end with a boss (your noisiest sender) that hovers over
+// you and shoots back. Two best scores per pace: points, and emails cleared. Nothing changes in Gmail until
 // you review and apply.
 const DF = { on: false };
 const DF_ICON = { promo: '🏷️', update: '🔔', person: '👤' };
@@ -19,6 +21,23 @@ const FIT = {
 };
 const CONTROLS = '<b>A D</b> move · <b>H</b> reply · <b>J</b> delete · <b>K</b> archive · <b>L</b> keep · <b>Q</b> finish';
 const backLabel = () => S.backend.backLabel || 'Back to mail';
+// Pace: [start, added per level, ceiling]. A level is LEVEL_SECONDS of play. Speed only ever goes up, then holds.
+const PACES = {
+  relaxed: { name: 'Relaxed', key: '1', desc: 'Slow start, gentle climb', speed: [22, 4, 70], gap: [3.0, 0.12, 1.7], bossFire: 2.6 },
+  normal: { name: 'Normal', key: '2', desc: 'The standard run', speed: [28, 6, 105], gap: [2.6, 0.14, 1.25], bossFire: 2.0 },
+  fast: { name: 'Fast', key: '3', desc: 'Starts quick, gets brutal', speed: [38, 8, 140], gap: [2.1, 0.14, 1.0], bossFire: 1.5 },
+};
+const LEVEL_SECONDS = 20;
+const FIRE_EVERY = 1.0; // seconds between shots, the same at every speed
+function paceNow() {
+  const p = PACES[DF.pace], lv = DF.t / LEVEL_SECONDS;
+  return { speed: Math.min(p.speed[2], p.speed[0] + p.speed[1] * lv), gap: Math.max(p.gap[2], p.gap[0] - p.gap[1] * lv), top: p.speed[0] + p.speed[1] * lv >= p.speed[2] };
+}
+function bestFor(pace) {
+  const b = store.get('defenseBest.' + pace) || {};
+  const old = store.get('defenseBest'); // single best from before paces existed counts as Normal
+  return { score: b.score || (pace === 'normal' && typeof old === 'number' ? old : 0), cleared: b.cleared || 0 };
+}
 
 // ---------------------------------------------------------------- sound (tiny WebAudio blips)
 const SFX = {
@@ -64,11 +83,39 @@ async function startDefense() {
     $('#dfBack').onclick = exitDefense;
     return;
   }
-  setupDefense(items.sort(() => Math.random() - 0.5));
+  defenseMenu(items.sort(() => Math.random() - 0.5));
+}
+
+function defenseMenu(items) {
+  const el = $('#defense'), last = store.get('defensePace') || 'normal';
+  DF.menu = { items, last };
+  setHTML(el, `<div class="t-end df-menu"><h1>🛡️ Mail Defense</h1>
+    <p class="dim">${items.length} emails incoming. Pick a pace: it keeps getting faster, then holds at its top speed.</p>
+    <div class="df-levels">${Object.entries(PACES).map(([id, p]) => { const b = bestFor(id); return `<button class="df-level${id === last ? ' last' : ''}" data-pace="${id}"><b><kbd>${p.key}</kbd> ${p.name}</b><small>${p.desc}</small><small>Best: ${b.score} pts · ${b.cleared} cleared</small></button>`; }).join('')}</div>
+    <p class="dim">${CONTROLS} · one shot a second · <b>Enter</b> plays your last pace</p>
+    <div class="t-end-btns"><button id="dfBack">${backLabel()}</button></div></div>`);
+  el.querySelectorAll('[data-pace]').forEach((b) => (b.onclick = () => pickPace(b.dataset.pace)));
+  $('#dfBack').onclick = exitDefense;
+}
+function pickPace(pace) {
+  const m = DF.menu;
+  if (!m) return;
+  DF.menu = null;
+  store.set('defensePace', pace);
+  setupDefense(m.items, pace);
+}
+// keys on the pace menu: 1 2 3, or Enter for the last pace
+function defenseMenuKey(e) {
+  if (!DF.menu) return false;
+  const p = Object.keys(PACES).find((id) => PACES[id].key === e.key);
+  if (p) { pickPace(p); return true; }
+  if (e.key === 'Enter') { pickPace(DF.menu.last); return true; }
+  return false;
 }
 
 function exitDefense() {
   DF.on = false;
+  DF.menu = null;
   cancelAnimationFrame(DF.raf);
   $('#defense').classList.add('hidden');
   setHTML($('#defense'), '');
@@ -76,11 +123,12 @@ function exitDefense() {
   loadList();
 }
 
-function setupDefense(queue) {
+function setupDefense(queue, pace) {
   const el = $('#defense');
   const W = Math.min(940, window.innerWidth - 40), H = Math.min(640, window.innerHeight - 170);
   setHTML(el, `
     <div class="bk-hud df-hud"><div class="stat"><b id="dfScore">0</b><span>score</span></div>
+      <div class="stat"><b id="dfCleared">0</b><span>cleared</span></div>
       <div class="stat combo"><b id="dfCombo">x1</b><span>combo</span></div>
       <div class="stat"><b id="dfLives"></b><span>lives</span></div>
       <div class="stat"><b id="dfWave">1</b><span>wave</span></div>
@@ -92,13 +140,13 @@ function setupDefense(queue) {
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
   Object.assign(DF, {
-    on: true, ended: false, ctx, W, H, queue: queue.slice(0, 90), cards: [], shots: [], done: [],
-    lives: 5, score: 0, combo: 1, maxCombo: 1, right: 0, wrong: 0, missed: 0, bossesBeaten: 0,
-    t: 0, wave: 1, waveLeft: 0, spawnT: 1.2, breakT: 0, boss: null, banner: null,
-    slowT: 0, tripleT: 0, cool: 0, keys: {}, paused: false, over: false,
+    on: true, ended: false, ctx, W, H, pace, queue: queue.slice(), cards: [], shots: [], bolts: [], done: [],
+    lives: 5, score: 0, cleared: 0, combo: 1, maxCombo: 1, right: 0, wrong: 0, missed: 0, bossesBeaten: 0,
+    t: 0, wave: 1, waveLeft: 0, spawnT: 1.2, breakT: 0, boss: null, banner: null, topSpeed: false,
+    tripleT: 0, cool: 0, queued: null, keys: {}, paused: false, over: false,
     fx: [], pops: [], shake: 0, flash: 0, stars: Array.from({ length: 60 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.5 + 0.3 })),
     cardW: Math.min(220, W / 3.6), cardH: 50, lineY: H - 70, turret: { x: W / 2, glow: '#ffd45e' },
-    best: store.get('defenseBest') || 0, last: performance.now(),
+    best: bestFor(pace), last: performance.now(),
   });
   startWave(1);
   $('#dfQuit').onclick = () => endDefense(false);
@@ -118,6 +166,7 @@ function startWave(n) {
 
 function dfHud() {
   $('#dfScore').textContent = DF.score;
+  $('#dfCleared').textContent = DF.cleared;
   $('#dfCombo').textContent = 'x' + DF.combo;
   $('#dfLives').textContent = '❤'.repeat(Math.max(0, DF.lives)) || '—';
   $('#dfWave').textContent = DF.wave;
@@ -142,16 +191,18 @@ function spawnBoss() {
   if (!top || top[1] < 2) return false;
   const items = DF.queue.filter((t) => t.fromEmail === top[0]);
   DF.queue = DF.queue.filter((t) => t.fromEmail !== top[0]);
-  const hp = Math.min(items.length, 8) + 3 + DF.wave;
-  DF.boss = { items, name: items[0].from, kind: items[0].kind, hp, max: hp, x: DF.W / 2 - 130, y: -90, w: 260, h: 70, dir: 1, hitT: 0 };
-  DF.banner = { text: `BOSS: ${items[0].from}`, sub: `${items.length} emails · J delete or K archive`, life: 2.2 };
+  const hp = Math.min(4 + DF.wave, 10);
+  DF.boss = { items, name: items[0].from, kind: items[0].kind, hp, max: hp, x: DF.W / 2 - 130, y: -90, w: 260, h: 70, hitT: 0, fireT: 1.6 };
+  DF.banner = { text: `BOSS: ${items[0].from}`, sub: `${items.length} emails · it shoots back: dodge, then J delete or K archive`, life: 2.2 };
   SFX.play('power');
   return true;
 }
 
 function fire(kind) {
-  if (DF.cool > 0 || DF.over || DF.paused) return;
-  DF.cool = 0.2;
+  if (DF.over || DF.paused) return;
+  if (DF.cool > 0) { DF.queued = kind; return; } // fires the moment the launcher is ready
+  DF.cool = FIRE_EVERY;
+  DF.queued = null;
   const x = DF.turret.x, y = DF.H - 40;
   const spread = DF.tripleT > 0 ? [-0.18, 0, 0.18] : [0];
   spread.forEach((a) => DF.shots.push({ kind, x, y, vx: Math.sin(a) * 760, vy: -Math.cos(a) * 760 }));
@@ -164,7 +215,11 @@ function addCombo() {
   DF.maxCombo = Math.max(DF.maxCombo, DF.combo);
   const cheer = { 3: 'NICE!', 6: 'GREAT!', 9: 'ON FIRE! 🔥', 12: 'UNSTOPPABLE!' }[DF.combo];
   if (cheer) DF.pops.push({ x: DF.W / 2, y: DF.H / 2, text: cheer, life: 1.1, color: '#ffd45e', big: true });
-  if (DF.combo === 5) { DF.slowT = 6; DF.banner = { text: 'Slow-mo!', sub: 'combo x5', life: 1.2 }; SFX.play('power'); }
+  if (DF.combo === 5) {
+    if (DF.lives < 5) { DF.lives++; DF.banner = { text: 'Extra life! ❤', sub: 'combo x5', life: 1.2 }; }
+    else { DF.score += 100; DF.banner = { text: '+100', sub: 'combo x5 with full lives', life: 1.2 }; }
+    SFX.play('power');
+  }
   if (DF.combo === 10) { DF.tripleT = 8; DF.banner = { text: 'Triple shot!', sub: 'combo x10', life: 1.2 }; SFX.play('power'); }
 }
 
@@ -185,6 +240,7 @@ function hitCard(card, shot) {
   else if (fit === 1) { DF.right++; pts = 5; SFX.play(shot); }
   else { DF.combo = 1; DF.wrong++; pts = 1; SFX.play('bad'); }
   DF.score += pts;
+  DF.cleared++;
   DF.done.push({ t: card.t, op: shot });
   burst(cx, cy, SHOT[shot].color, fit === 2 ? 22 : 10);
   const word = fit === 2 ? 'Perfect' : fit === 1 ? 'OK' : shot === 'reply' ? 'Nobody to reply to' : 'Kept junk';
@@ -199,7 +255,7 @@ function hitBoss(shot, x, y) {
   burst(x, y, '#ff5d7a', 8); SFX.play('boss');
   if (b.hp <= 0) {
     const n = b.items.length, pts = 60 * n;
-    DF.score += pts; DF.bossesBeaten++;
+    DF.score += pts; DF.bossesBeaten++; DF.cleared += n;
     b.items.forEach((t) => DF.done.push({ t, op: b.lastShot })); // the finishing shot decides: delete or archive
     for (let i = 0; i < 4; i++) burst(b.x + Math.random() * b.w, b.y + Math.random() * b.h, ['#ff5d7a', '#ffd45e', '#d66bff'][i % 3], 26);
     DF.shake = 0.6; DF.flash = 0.25;
@@ -234,26 +290,27 @@ function dfStep(now) {
 
 function dfUpdate(dt) {
   DF.t += dt;
-  const slow = DF.slowT > 0 ? 0.45 : 1;
-  DF.slowT = Math.max(0, DF.slowT - dt); DF.tripleT = Math.max(0, DF.tripleT - dt);
+  const pace = paceNow();
+  if (pace.top && !DF.topSpeed) { DF.topSpeed = true; DF.banner = { text: 'Top speed!', sub: 'it stays this fast now', life: 1.8 }; SFX.play('power'); }
+  DF.tripleT = Math.max(0, DF.tripleT - dt);
   DF.cool = Math.max(0, DF.cool - dt);
+  if (DF.cool <= 0 && DF.queued) fire(DF.queued);
   // turret
   if (DF.keys.a || DF.keys.arrowleft) DF.turret.x -= 560 * dt;
   if (DF.keys.d || DF.keys.arrowright) DF.turret.x += 560 * dt;
   DF.turret.x = Math.max(28, Math.min(DF.W - 28, DF.turret.x));
-  for (const [key, shot] of Object.entries(FIRE_KEYS)) if (DF.keys[key]) fire(shot);
   // waves
   if (DF.breakT > 0) DF.breakT -= dt;
   else if (DF.waveLeft > 0) {
     DF.spawnT -= dt;
-    if (DF.spawnT <= 0) { dfSpawn(); DF.spawnT = Math.max(1.0, 2.6 - DF.wave * 0.22) * (0.8 + Math.random() * 0.4); }
+    if (DF.spawnT <= 0) { dfSpawn(); DF.spawnT = pace.gap * (0.85 + Math.random() * 0.3); }
   } else if (!DF.cards.length && !DF.boss) {
     if (!DF.bossDone && spawnBoss()) DF.bossDone = true;
     else if (DF.queue.length) { DF.bossDone = false; startWave(DF.wave + 1); }
     else if (!DF.cards.length) { DF.over = true; setTimeout(() => endDefense(true), 700); }
   }
   // cards
-  const speed = (24 + DF.wave * 7) * slow;
+  const speed = pace.speed;
   for (const c of DF.cards) {
     c.y += speed * dt;
     c.phase += dt;
@@ -268,18 +325,29 @@ function dfUpdate(dt) {
   const b = DF.boss;
   if (b) {
     b.hitT = Math.max(0, b.hitT - dt);
-    if (b.y < 40) b.y += 60 * dt;
-    else b.y += (5 + DF.wave) * slow * dt;
-    b.x += b.dir * (90 + DF.wave * 12) * slow * dt;
-    if (b.x < 10 || b.x + b.w > DF.W - 10) b.dir *= -1;
-    if (b.y + b.h >= DF.lineY) {
-      // boss reached the inbox: two lives, and its emails stay untouched
-      b.items.forEach((t) => DF.done.push({ t, op: null }));
-      DF.boss = null; DF.missed++;
-      loseLife(DF.W / 2, DF.lineY - 30, 'The boss got through! −❤');
-      if (DF.lives > 0) loseLife(DF.W / 2, DF.lineY - 60, '−❤');
+    if (b.y < 30) b.y += 90 * dt; // flies in, then hovers
+    // follows the launcher, a bit slower than you can move, so you can slip out from under it
+    const step = Math.min(420, 120 + 14 * DF.wave) * dt, want = DF.turret.x - b.w / 2;
+    b.x = Math.max(6, Math.min(DF.W - b.w - 6, b.x + Math.max(-step, Math.min(step, want - b.x))));
+    b.fireT -= dt;
+    if (b.fireT <= 0 && b.y >= 30) {
+      b.fireT = PACES[DF.pace].bossFire * (0.8 + Math.random() * 0.4);
+      const sx = b.x + b.w / 2, sy = b.y + b.h, tx = DF.turret.x, ty = DF.H - 28;
+      const d = Math.hypot(tx - sx, ty - sy), v = Math.min(520, 240 + 14 * DF.wave);
+      DF.bolts.push({ x: sx, y: sy, vx: ((tx - sx) / d) * v, vy: ((ty - sy) / d) * v });
+      SFX.play('boss');
     }
   }
+  // the boss's shots: aimed at where you are, so keep moving
+  for (const o of DF.bolts) {
+    o.x += o.vx * dt; o.y += o.vy * dt;
+    if (Math.abs(o.x - DF.turret.x) < 30 && o.y > DF.H - 52 && o.y < DF.H - 10) {
+      o.dead = true;
+      burst(o.x, o.y, '#ff5d7a', 14);
+      loseLife(o.x, DF.H - 64, 'Hit by the boss! −❤');
+    }
+  }
+  DF.bolts = DF.bolts.filter((o) => !o.dead && o.y < DF.H + 20 && o.x > -20 && o.x < DF.W + 20);
   // shots
   for (const s of DF.shots) {
     s.x += s.vx * dt; s.y += s.vy * dt;
@@ -294,7 +362,7 @@ function dfUpdate(dt) {
   DF.pops.forEach((p) => { p.y -= (p.big ? 18 : 36) * dt; p.life -= dt; });
   DF.pops = DF.pops.filter((p) => p.life > 0);
   if (DF.banner) { DF.banner.life -= dt; if (DF.banner.life <= 0) DF.banner = null; }
-  DF.stars.forEach((s) => { s.y += s.s * 18 * dt * (DF.slowT > 0 ? 0.4 : 1); if (s.y > DF.H) { s.y = 0; s.x = Math.random() * DF.W; } });
+  DF.stars.forEach((s) => { s.y += s.s * speed * 0.6 * dt; if (s.y > DF.H) { s.y = 0; s.x = Math.random() * DF.W; } });
   DF.shake = Math.max(0, DF.shake - dt); DF.flash = Math.max(0, DF.flash - dt);
 }
 
@@ -303,7 +371,7 @@ function dfDraw() {
   c.save();
   if (DF.shake > 0) c.translate((Math.random() - 0.5) * 14 * DF.shake, (Math.random() - 0.5) * 14 * DF.shake);
   const g = c.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, DF.slowT > 0 ? '#101a33' : '#0d1222'); g.addColorStop(1, '#1d1033');
+  g.addColorStop(0, '#0d1222'); g.addColorStop(1, '#1d1033');
   c.fillStyle = g; c.fillRect(-12, -12, W + 24, H + 24);
   c.fillStyle = 'rgba(200,220,255,.5)';
   DF.stars.forEach((s) => c.fillRect(s.x, s.y, s.s, s.s * 2));
@@ -349,13 +417,22 @@ function dfDraw() {
     c.beginPath(); c.moveTo(s.x, s.y); c.lineTo(s.x - s.vx * 0.025, s.y - s.vy * 0.025); c.stroke();
   }
   c.shadowBlur = 0;
+  // boss shots
+  for (const o of DF.bolts) {
+    c.shadowColor = '#ff5d7a'; c.shadowBlur = 16; c.fillStyle = '#ffb3c1';
+    c.beginPath(); c.arc(o.x, o.y, 6, 0, Math.PI * 2); c.fill();
+  }
+  c.shadowBlur = 0;
   // turret
   const tx = DF.turret.x, ty = H - 32;
   c.shadowColor = DF.turret.glow; c.shadowBlur = 18; c.fillStyle = '#ffd45e';
   c.beginPath(); c.roundRect(tx - 28, ty, 56, 16, 8); c.fill();
   c.beginPath(); c.roundRect(tx - 6, ty - 16, 12, 20, 4); c.fill(); c.shadowBlur = 0;
   c.fillStyle = DF.turret.glow; c.beginPath(); c.arc(tx, ty - 16, 4, 0, Math.PI * 2); c.fill();
-  if (DF.tripleT > 0) { c.fillStyle = '#ffd45e'; c.font = '700 11px system-ui'; c.textAlign = 'center'; c.fillText(`TRIPLE ${Math.ceil(DF.tripleT)}s`, tx, ty + 30); }
+  // reload bar: one shot a second
+  c.fillStyle = 'rgba(255,255,255,.14)'; c.fillRect(tx - 24, ty + 21, 48, 4);
+  c.fillStyle = DF.cool > 0 ? '#8a8fb0' : '#3ddc97'; c.fillRect(tx - 24, ty + 21, 48 * (1 - DF.cool / FIRE_EVERY), 4);
+  if (DF.tripleT > 0) { c.fillStyle = '#ffd45e'; c.font = '700 11px system-ui'; c.textAlign = 'center'; c.fillText(`TRIPLE ${Math.ceil(DF.tripleT)}s`, tx, ty + 36); }
   // fx
   for (const p of DF.fx) { c.globalAlpha = Math.max(0, p.life / 0.7); c.fillStyle = p.c; c.fillRect(p.x - 2, p.y - 2, 4, 4); }
   c.globalAlpha = 1; c.textAlign = 'center';
@@ -367,7 +444,6 @@ function dfDraw() {
     c.fillStyle = '#c9c9ff'; c.font = '600 16px system-ui'; c.fillText(DF.banner.sub, W / 2, H * 0.36 + 34);
     c.globalAlpha = 1;
   }
-  if (DF.slowT > 0) { c.fillStyle = 'rgba(120,170,255,.08)'; c.fillRect(0, 0, W, H); }
   c.restore();
   if (DF.flash > 0) { c.fillStyle = `rgba(255,90,120,${DF.flash})`; c.fillRect(0, 0, W, H); }
   if (DF.paused) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(0, 0, W, H); c.fillStyle = '#fff'; c.font = '700 28px system-ui'; c.textAlign = 'center'; c.fillText('Paused · P to resume', W / 2, H / 2); }
@@ -377,8 +453,8 @@ function endDefense(won) {
   if (!DF.on || DF.ended) return;
   DF.ended = true; DF.on = false;
   cancelAnimationFrame(DF.raf);
-  const newBest = DF.score > DF.best;
-  if (newBest) store.set('defenseBest', DF.score);
+  const best = DF.best, newScore = DF.score > best.score, newCleared = DF.cleared > best.cleared;
+  if (newScore || newCleared) store.set('defenseBest.' + DF.pace, { score: Math.max(best.score, DF.score), cleared: Math.max(best.cleared, DF.cleared) });
   const groups = { delete: [], archive: [], reply: [], keep: [] };
   DF.done.forEach((d) => { if (d.op) groups[d.op].push(d.t); });
   const rows = Object.entries(groups).filter(([, l]) => l.length);
@@ -388,7 +464,8 @@ function endDefense(won) {
   setHTML(el, `<div class="t-end bk-review">
     <h1>${won ? 'Inbox defended! 🛡️' : DF.lives <= 0 ? 'Your inbox was overrun' : 'Run finished'}</h1>
     <div class="big">${DF.score}</div>
-    <div class="dim">${newBest ? '🏆 New best score' : 'Best: ' + Math.max(DF.best, DF.score)}</div>
+    <div class="dim">${PACES[DF.pace].name} pace · ${newScore ? '🏆 New best score' : 'Best score ' + best.score}</div>
+    <div class="df-cleared"><b>${DF.cleared}</b> emails cleared · ${newCleared ? '🏆 New best' : 'best ' + best.cleared}</div>
     <div class="t-stats"><div><b>${DF.wave}</b>wave</div><div><b>${acc}%</b>perfect calls</div><div><b>x${DF.maxCombo}</b>best combo</div><div><b>${DF.bossesBeaten}</b>bosses beaten</div><div><b>${DF.missed}</b>landed</div></div>
     ${rows.length ? `<p id="dfIntro"><b>Nothing in your Gmail has changed yet.</b> Untick anything you don't want, then apply.</p>
     <div class="df-groups">${rows.map(([op, list]) => `<details class="df-group"><summary><input type="checkbox" data-op="${op}" checked> <b>${OP_LABEL[op]}</b> · ${list.length} email${list.length > 1 ? 's' : ''}</summary>
@@ -437,7 +514,9 @@ function endDefense(won) {
   };
 }
 
-// keys: A/D (or arrows) move · H reply · J delete · K archive · L keep (held = auto-fire) · P pause · Q/Esc finish
+// keys: A/D (or arrows) move · H reply · J delete · K archive · L keep · P pause · Q/Esc finish.
+// One bullet per key press: holding a key (or the OS repeating it) fires nothing more. A press while the
+// launcher reloads fires once, as soon as it's ready.
 function defenseKey(e, down = true) {
   const k = e.key.toLowerCase();
   if (k === 'a' || k === 'd' || k === 'arrowleft' || k === 'arrowright') { DF.keys[k] = down; return true; }
@@ -455,9 +534,8 @@ function dfAuto() {
   const tgt = DF.cards.reduce((a, c) => (!a || c.y > a.y ? c : a), null);
   const aim = tgt ? tgt.x + tgt.w / 2 : DF.boss ? DF.boss.x + DF.boss.w / 2 : DF.W / 2;
   DF.keys.a = aim < DF.turret.x - 8; DF.keys.d = aim > DF.turret.x + 8;
-  DF.keys.h = DF.keys.j = DF.keys.k = DF.keys.l = false;
-  if (Math.abs(aim - DF.turret.x) < 30) {
-    if (tgt && tgt.y > 60) DF.keys[{ promo: 'j', update: 'k', person: (tgt.t.subject || '').length % 2 ? 'h' : 'l' }[tgt.t.kind]] = true;
-    else if (!tgt && DF.boss) DF.keys.j = true;
+  if (Math.abs(aim - DF.turret.x) < 30 && DF.cool <= 0 && !DF.queued) {
+    if (tgt && tgt.y > 60) fire({ promo: 'delete', update: 'archive', person: (tgt.t.subject || '').length % 2 ? 'reply' : 'keep' }[tgt.t.kind]);
+    else if (!tgt && DF.boss) fire('delete');
   }
 }

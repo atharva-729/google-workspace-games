@@ -48,6 +48,7 @@ async function start() {
     if (BK.on) bkDraw();
     if (params.has('end') && BK.on) endBreakout(false);
     // Mail Defense autoplayer for tests
+    if (DF.menu) pickPace('normal');
     if (DF.on) {
       for (let f = 0; f < sim && DF.on && !DF.over; f++) { dfAuto(); dfUpdate(1 / 60); }
       dfDraw();
@@ -335,6 +336,7 @@ document.addEventListener('keydown', (e) => {
   if ($('#app').classList.contains('hidden')) return;
   if (!$('#defense').classList.contains('hidden')) {
     if (DF.on) { if (defenseKey(e)) e.preventDefault(); }
+    else if (defenseMenuKey(e)) e.preventDefault();
     else if ((e.key === 'Escape' || e.key.toLowerCase() === 'q') && !DF.applying) exitDefense();
     return;
   }
@@ -388,7 +390,8 @@ const KEYBARS = {
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
   breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
-  defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['', 'hold to auto-fire'], ['P', 'pause'], ['Q / Esc', 'finish & review']],
+  defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['P', 'pause'], ['Q / Esc', 'finish & review']],
+  dfmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['Esc', 'back to mail']],
   review: [['Q / Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;
@@ -401,7 +404,7 @@ setInterval(() => {
   const inBreakout = !$('#breakout').classList.contains('hidden');
   const inDefense = !$('#defense').classList.contains('hidden');
   const composing = !!document.querySelector('.composer');
-  const mode = inDefense ? (DF.on ? 'defense' : 'review') : inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
+  const mode = inDefense ? (DF.on ? 'defense' : DF.menu ? 'dfmenu' : 'review') : inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
   if (mode === keybarMode) return;
   keybarMode = mode;
   bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span>${k ? `<kbd>${esc(k)}</kbd> ` : ''}${esc(v)}</span>`).join('');

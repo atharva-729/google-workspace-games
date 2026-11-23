@@ -59,6 +59,7 @@ function onKey(e) {
   if (e.type === 'keypress') return;
   if (e.type === 'keyup') { if (DF.on) defenseKey(e, false); return; }
   if (DF.on) { if (defenseKey(e)) e.preventDefault(); }
+  else if (defenseMenuKey(e)) e.preventDefault();
   else if ((e.key === 'Escape' || e.key.toLowerCase() === 'q') && !applying) closeArcade();
 }
 ['keydown', 'keyup', 'keypress'].forEach((t) => window.addEventListener(t, onKey, true));
