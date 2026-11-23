@@ -71,7 +71,7 @@ function renderCard() {
   if (!c) return endTriage();
   T.shownAt = Date.now();
   T.composing = false;
-  const k = KINDS[c.kind], pts = TP[c.kind];
+  const k = KINDS[c.kind];
   const more = sameSender(c);
   const done = T.i, total = T.deck.length;
   $('#triage').innerHTML = `
@@ -85,7 +85,7 @@ function renderCard() {
     </div>
     <div class="t-stage">
       <article class="t-card kind-${c.kind}" id="tCard">
-        <div class="t-card-top"><span class="chip">${k.label}</span><span class="t-hint">${k.hint}</span><span class="date">${fmtDate(c.date)}</span></div>
+        <div class="t-card-top"><span class="chip">${k.label}</span><span class="date">${fmtDate(c.date)}</span></div>
         <div class="t-from"><b>${esc(c.from)}</b> <span>&lt;${esc(c.fromEmail)}&gt;</span>${c.count > 1 ? ` <small>· ${c.count} messages</small>` : ''}${c.starred ? ' <span class="star on">★</span>' : ''}</div>
         <h2>${esc(c.subject || '(no subject)')}</h2>
         <div class="t-body" id="tBody"><div class="status">${esc(c.snippet)}</div></div>
@@ -93,9 +93,8 @@ function renderCard() {
       </article>
       <div class="t-actions" id="tActions">
         ${ACTIONS.map(([a, key, label]) => {
-          const p = a === 'later' ? '' : `<em class="${pts[a] >= 20 ? 'hi' : pts[a] >= 10 ? 'mid' : 'lo'}">+${pts[a]}</em>`;
           const off = a === 'reply' && NOREPLY.test(c.fromEmail || '') ? ' disabled title="No-reply address"' : '';
-          return `<button data-a="${a}"${off}><kbd>${key}</kbd>${label}${p}</button>`;
+          return `<button data-a="${a}"${off}><kbd>${key}</kbd>${label}</button>`;
         }).join('')}
       </div>
       ${more.length ? `<div class="t-sweep">🧹 <b>${more.length + 1}</b> unread from ${esc(c.from)}. Sweep them all: <button data-sweep="delete"><kbd>Shift+D</kbd> delete all</button> <button data-sweep="archive"><kbd>Shift+E</kbd> archive all</button></div>` : ''}
