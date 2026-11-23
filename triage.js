@@ -7,7 +7,7 @@ const KINDS = {
 };
 const TP = {
   person: { reply: 50, star: 15, read: 10, archive: 5, delete: 0 },
-  promo: { reply: 0, star: 0, read: 5, archive: 15, delete: 25 },
+  promo: { reply: 0, star: 0, read: 5, archive: 15, delete: 50 },
   update: { reply: 10, star: 5, read: 15, archive: 20, delete: 10 },
 };
 const ACTIONS = [

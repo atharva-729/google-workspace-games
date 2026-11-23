@@ -1,5 +1,5 @@
 // Reply composer shared by the mail view and the triage game, plus a 5-second undo-send queue.
-const NOREPLY = /(no-?reply|do-?not-?reply|notifications?@|alerts?@|mailer-daemon|^digest@|^offers@|^deals@)/i;
+const NOREPLY = /(no[-_.]?reply|do[-_.]?not[-_.]?reply|notifications?@|alerts?@|mailer-daemon|^digest@|^offers@|^deals@)/i;
 
 const Compose = {
   // Pick the message to answer (the latest one not sent by me) and build the reply headers.

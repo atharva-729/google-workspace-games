@@ -4,7 +4,9 @@ const store = {
   get(k) { try { return JSON.parse(localStorage.getItem('ia.' + k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem('ia.' + k, JSON.stringify(v)); } catch {} },
 };
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// Games set HTML through this, so the bookmarklet build can swap in a Trusted Types version for Gmail's page.
+function setHTML(el, html) { el.innerHTML = html; }
+const esc = (s) =>String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const S = { backend: null, who: '', view: 'inbox', q: '', threads: [], total: 0, cursor: 0, open: null, undo: null, busy: false };
 
@@ -129,14 +131,26 @@ $('#list').addEventListener('click', (e) => {
 });
 
 document.querySelectorAll('.views button').forEach((b) => (b.onclick = () => setView(b.dataset.view)));
-function setView(v) { S.view = v; S.q = ''; $('#search').value = ''; S.cursor = 0; closeThread(false); loadList(); }
+function setView(v) { S.view = v; S.q = ''; $('#search').value = ''; S.cursor = 0; closeThread(false); leaveLoadingGame(); loadList(); }
+
+// Switching view while a game is still loading leaves it: the load finishes quietly and the game doesn't open.
+function leaveLoadingGame() {
+  [['#breakout', BK], ['#defense', DF]].forEach(([id, g]) => {
+    if (!g.loading) return;
+    $(id).classList.add('hidden');
+    $(id).innerHTML = '';
+    $('#main').classList.remove('hidden');
+  });
+}
+
+window.addEventListener('gmail-wait', (e) => toast(`Gmail asked us to slow down. Retrying in ${Math.ceil(e.detail / 1000)} s…`));
 
 $('#searchForm').onsubmit = (e) => {
   e.preventDefault();
   const q = $('#search').value.trim();
   $('#search').blur();
   if (!q) return setView('inbox');
-  S.view = 'search'; S.q = q; S.cursor = 0; closeThread(false); loadList();
+  S.view = 'search'; S.q = q; S.cursor = 0; closeThread(false); leaveLoadingGame(); loadList();
 };
 
 // ---------------------------------------------------------------- actions
@@ -321,7 +335,7 @@ document.addEventListener('keydown', (e) => {
   if ($('#app').classList.contains('hidden')) return;
   if (!$('#defense').classList.contains('hidden')) {
     if (DF.on) { if (defenseKey(e)) e.preventDefault(); }
-    else if (e.key === 'Escape') exitDefense();
+    else if ((e.key === 'Escape' || e.key.toLowerCase() === 'q') && !DF.applying) exitDefense();
     return;
   }
   if (!$('#breakout').classList.contains('hidden')) {
@@ -374,8 +388,8 @@ const KEYBARS = {
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
   breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
-  defense: [['A / D', 'move'], ['S', 'bin it (promo → Trash, update → Archive)'], ['F', 'keep it (👤 people → star for reply)'], ['', 'hold to auto-fire'], ['P', 'pause'], ['Esc', 'finish & review']],
-  review: [['Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
+  defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['', 'hold to auto-fire'], ['P', 'pause'], ['Q / Esc', 'finish & review']],
+  review: [['Q / Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;
 setInterval(() => {

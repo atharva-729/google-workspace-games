@@ -1,11 +1,24 @@
-// Mail Defense: emails fall toward your inbox. Move with A/D, shoot with S (bin it) or F (keep it).
-// Bin: promos → Trash, updates → Archive. Keep: people → star for reply, anything else → mark read.
-// Waves end with a boss: your noisiest sender. Nothing changes in Gmail until you review and apply.
+// Mail Defense: emails fall toward your inbox. Move with A/D, shoot with the right hand:
+// H reply (star to reply later) · J delete (Trash) · K archive · L keep (stays in the inbox, marked read).
+// Q or Esc finishes the run. Waves end with a boss: your noisiest sender. Nothing changes in Gmail until
+// you review and apply.
 const DF = { on: false };
 const DF_ICON = { promo: '🏷️', update: '🔔', person: '👤' };
 const DF_COLOR = { promo: '#ff6b8b', update: '#4fb8ff', person: '#3ddc97' };
-const SHOT = { bin: { color: '#ff5d7a', glow: '#ff9aae' }, keep: { color: '#3ddc97', glow: '#a6f5d2' } };
-const OP_LABEL = { delete: '🗑 Move to Trash', archive: '📥 Archive', reply: '★ Star to reply later', read: '👁 Mark as read' };
+const SHOT = {
+  reply: { color: '#ffd45e', glow: '#fff0a8' }, delete: { color: '#ff5d7a', glow: '#ff9aae' },
+  archive: { color: '#4fb8ff', glow: '#a8dcff' }, keep: { color: '#3ddc97', glow: '#a6f5d2' },
+};
+const FIRE_KEYS = { h: 'reply', j: 'delete', k: 'archive', l: 'keep' };
+const OP_LABEL = { delete: '🗑 Move to Trash', archive: '📥 Archive', reply: '★ Star to reply later', keep: '👁 Keep in inbox, mark read' };
+// How well a shot fits an email: 2 perfect, 1 fine, 0 wrong, -1 refused (deleting a person costs a life).
+const FIT = {
+  promo: { delete: 2, archive: 1, keep: 0, reply: 0 },
+  update: { delete: 1, archive: 2, keep: 1, reply: 0 },
+  person: { delete: -1, archive: 1, keep: 2, reply: 2 },
+};
+const CONTROLS = '<b>A D</b> move · <b>H</b> reply · <b>J</b> delete · <b>K</b> archive · <b>L</b> keep · <b>Q</b> finish';
+const backLabel = () => S.backend.backLabel || 'Back to mail';
 
 // ---------------------------------------------------------------- sound (tiny WebAudio blips)
 const SFX = {
@@ -16,7 +29,8 @@ const SFX = {
       if (this.ctx.state === 'suspended') this.ctx.resume();
       const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain();
       const P = {
-        bin: ['square', 520, 260, 0.07, 0.04], keep: ['triangle', 420, 700, 0.08, 0.05],
+        delete: ['square', 520, 260, 0.07, 0.04], archive: ['square', 380, 300, 0.07, 0.035],
+        keep: ['triangle', 420, 700, 0.08, 0.05], reply: ['triangle', 560, 1000, 0.09, 0.05],
         good: ['triangle', 660, 1320, 0.12, 0.07], bad: ['sawtooth', 180, 90, 0.25, 0.06],
         hurt: ['sawtooth', 140, 60, 0.35, 0.08], boss: ['square', 200, 120, 0.1, 0.05],
         bossdie: ['sawtooth', 300, 40, 0.7, 0.09], power: ['triangle', 440, 1760, 0.35, 0.07], wave: ['sine', 330, 660, 0.4, 0.06],
@@ -30,16 +44,23 @@ const SFX = {
 };
 
 async function startDefense() {
-  if (T.active || BK.on || DF.on) return;
+  if (T.active || BK.on || BK.loading || DF.on || DF.loading) return;
   closeThread(false);
   $('#main').classList.add('hidden');
   const el = $('#defense');
   el.classList.remove('hidden');
-  el.innerHTML = '<div class="status t-loading">Loading the incoming wave…</div>';
+  setHTML(el, `<div class="t-end"><div class="status t-loading">Loading the incoming wave…</div><div class="t-end-btns"><button id="dfBack">${backLabel()}</button></div></div>`);
+  $('#dfBack').onclick = exitDefense;
   let items;
-  try { items = await fetchBricks(); } catch (e) { el.innerHTML = `<div class="status">Error: ${esc(e.message)}</div>`; return; }
+  DF.loading = true;
+  try { items = await fetchBricks(); } catch (e) {
+    if (!el.classList.contains('hidden')) { setHTML(el, `<div class="t-end"><p class="status">${esc(e.message)}</p><div class="t-end-btns"><button id="dfBack" class="primary">${backLabel()}</button></div></div>`); $('#dfBack').onclick = exitDefense; }
+    return;
+  }
+  finally { DF.loading = false; }
+  if (el.classList.contains('hidden')) return; // left while it was loading
   if (!items.length) {
-    el.innerHTML = '<div class="t-end"><h1>Nothing incoming 🎉</h1><div class="t-end-btns"><button id="dfBack" class="primary">Back to mail</button></div></div>';
+    setHTML(el, '<div class="t-end"><h1>Nothing incoming 🎉</h1><div class="t-end-btns"><button id="dfBack" class="primary">' + backLabel() + '</button></div></div>');
     $('#dfBack').onclick = exitDefense;
     return;
   }
@@ -50,7 +71,7 @@ function exitDefense() {
   DF.on = false;
   cancelAnimationFrame(DF.raf);
   $('#defense').classList.add('hidden');
-  $('#defense').innerHTML = '';
+  setHTML($('#defense'), '');
   $('#main').classList.remove('hidden');
   loadList();
 }
@@ -58,15 +79,15 @@ function exitDefense() {
 function setupDefense(queue) {
   const el = $('#defense');
   const W = Math.min(940, window.innerWidth - 40), H = Math.min(640, window.innerHeight - 170);
-  el.innerHTML = `
+  setHTML(el, `
     <div class="bk-hud df-hud"><div class="stat"><b id="dfScore">0</b><span>score</span></div>
       <div class="stat combo"><b id="dfCombo">x1</b><span>combo</span></div>
       <div class="stat"><b id="dfLives"></b><span>lives</span></div>
       <div class="stat"><b id="dfWave">1</b><span>wave</span></div>
       <div class="stat"><b id="dfLeft">0</b><span>incoming</span></div>
-      <div class="bk-ticker" id="dfTicker"><b>A D</b> move · <b>S</b> bin it · <b>F</b> keep it (people!)</div>
-      <button class="t-quit" id="dfQuit">Finish</button></div>
-    <canvas id="dfCanvas"></canvas>`;
+      <div class="bk-ticker" id="dfTicker">${CONTROLS}</div>
+      <button class="t-quit" id="dfQuit" title="Q or Esc">Finish</button><button class="t-quit" id="dfLeave">${backLabel()}</button></div>
+    <canvas id="dfCanvas"></canvas>`);
   const cv = $('#dfCanvas'), dpr = window.devicePixelRatio || 1;
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
@@ -81,6 +102,7 @@ function setupDefense(queue) {
   });
   startWave(1);
   $('#dfQuit').onclick = () => endDefense(false);
+  $('#dfLeave').onclick = exitDefense;
   dfHud();
   DF.raf = requestAnimationFrame(dfStep);
 }
@@ -90,7 +112,7 @@ function startWave(n) {
   DF.wave = n;
   DF.waveLeft = Math.min(waveSize(n), DF.queue.length);
   DF.breakT = 2.2;
-  DF.banner = { text: `Wave ${n}`, sub: n === 1 ? 'A D move · S bin it · F keep it' : 'faster now…', life: 2.2 };
+  DF.banner = { text: `Wave ${n}`, sub: n === 1 ? 'H reply · J delete · K archive · L keep' : 'faster now…', life: 2.2 };
   SFX.play('wave');
 }
 
@@ -100,12 +122,6 @@ function dfHud() {
   $('#dfLives').textContent = '❤'.repeat(Math.max(0, DF.lives)) || '—';
   $('#dfWave').textContent = DF.wave;
   $('#dfLeft').textContent = DF.queue.length + DF.cards.length + (DF.boss ? DF.boss.items.length : 0);
-}
-
-// what happens in Gmail for a given email + shot
-function opFor(kind, shot) {
-  if (shot === 'bin') return kind === 'promo' ? 'delete' : 'archive';
-  return kind === 'person' ? 'reply' : 'read';
 }
 
 function dfSpawn() {
@@ -128,7 +144,7 @@ function spawnBoss() {
   DF.queue = DF.queue.filter((t) => t.fromEmail !== top[0]);
   const hp = Math.min(items.length, 8) + 3 + DF.wave;
   DF.boss = { items, name: items[0].from, kind: items[0].kind, hp, max: hp, x: DF.W / 2 - 130, y: -90, w: 260, h: 70, dir: 1, hitT: 0 };
-  DF.banner = { text: `BOSS: ${items[0].from}`, sub: `${items.length} emails · bin it with S`, life: 2.2 };
+  DF.banner = { text: `BOSS: ${items[0].from}`, sub: `${items.length} emails · J delete or K archive`, life: 2.2 };
   SFX.play('power');
   return true;
 }
@@ -154,41 +170,41 @@ function addCombo() {
 
 function hitCard(card, shot) {
   const k = card.t.kind, cx = card.x + card.w / 2, cy = card.y + card.h / 2;
-  if (k === 'person' && shot === 'bin') {
-    // never bin a person: costs a life, the email is kept untouched
+  const fit = FIT[k][shot];
+  DF.cards = DF.cards.filter((c) => c !== card);
+  if (fit < 0) {
+    // never delete a person: costs a life, the email is left untouched
     loseLife(cx, cy, `${card.t.from} is a person! −❤`);
     DF.wrong++;
-    DF.cards = DF.cards.filter((c) => c !== card);
     DF.done.push({ t: card.t, op: null });
-    $('#dfTicker').textContent = `😬 Don't bin people. ${card.t.from}'s email is kept for you.`;
+    $('#dfTicker').textContent = `😬 Don't delete people. ${card.t.from}'s email is left as it was.`;
     return;
   }
-  const perfect = (k === 'person') === (shot === 'keep');
   let pts;
-  if (perfect) { addCombo(); DF.right++; pts = 10 * DF.combo; SFX.play('good'); }
-  else { DF.combo = 1; DF.wrong++; pts = 3; SFX.play('bad'); }
+  if (fit === 2) { addCombo(); DF.right++; pts = 10 * DF.combo; SFX.play('good'); }
+  else if (fit === 1) { DF.right++; pts = 5; SFX.play(shot); }
+  else { DF.combo = 1; DF.wrong++; pts = 1; SFX.play('bad'); }
   DF.score += pts;
-  const op = opFor(k, shot);
-  DF.cards = DF.cards.filter((c) => c !== card);
-  DF.done.push({ t: card.t, op });
-  burst(cx, cy, SHOT[shot].color, perfect ? 22 : 10);
-  DF.pops.push({ x: cx, y: cy - 8, text: `${perfect ? 'Perfect' : k === 'person' ? 'OK' : 'Kept junk'} +${pts}${DF.combo > 1 ? ' x' + DF.combo : ''}`, life: 0.9, color: perfect ? '#ffd45e' : '#c9c9d9' });
-  $('#dfTicker').textContent = `${OP_LABEL[op].split(' ')[0]} ${card.t.from}: ${card.t.subject || '(no subject)'}`;
+  DF.done.push({ t: card.t, op: shot });
+  burst(cx, cy, SHOT[shot].color, fit === 2 ? 22 : 10);
+  const word = fit === 2 ? 'Perfect' : fit === 1 ? 'OK' : shot === 'reply' ? 'Nobody to reply to' : 'Kept junk';
+  DF.pops.push({ x: cx, y: cy - 8, text: `${word} +${pts}${DF.combo > 1 ? ' x' + DF.combo : ''}`, life: 0.9, color: fit === 2 ? '#ffd45e' : '#c9c9d9' });
+  $('#dfTicker').textContent = `${OP_LABEL[shot].split(' ')[0]} ${card.t.from}: ${card.t.subject || '(no subject)'}`;
 }
 
 function hitBoss(shot, x, y) {
   const b = DF.boss;
-  if (shot === 'keep') { DF.pops.push({ x, y, text: "Can't keep a spammer!", life: 0.8, color: '#c9c9d9' }); SFX.play('bad'); return; }
-  b.hp--; b.hitT = 0.12; DF.score += 5 * DF.combo;
+  if (shot === 'keep' || shot === 'reply') { DF.pops.push({ x, y, text: "Can't keep a spammer! J or K", life: 0.8, color: '#c9c9d9' }); SFX.play('bad'); return; }
+  b.hp--; b.hitT = 0.12; b.lastShot = shot; DF.score += 5 * DF.combo;
   burst(x, y, '#ff5d7a', 8); SFX.play('boss');
   if (b.hp <= 0) {
     const n = b.items.length, pts = 60 * n;
     DF.score += pts; DF.bossesBeaten++;
-    b.items.forEach((t) => DF.done.push({ t, op: opFor(t.kind, 'bin') }));
+    b.items.forEach((t) => DF.done.push({ t, op: b.lastShot })); // the finishing shot decides: delete or archive
     for (let i = 0; i < 4; i++) burst(b.x + Math.random() * b.w, b.y + Math.random() * b.h, ['#ff5d7a', '#ffd45e', '#d66bff'][i % 3], 26);
     DF.shake = 0.6; DF.flash = 0.25;
-    DF.pops.push({ x: DF.W / 2, y: b.y + 40, text: `${b.name} defeated! ${n} emails binned +${pts}`, life: 1.8, color: '#ffd45e', big: true });
-    $('#dfTicker').textContent = `💥 Beat ${b.name}: all ${n} of their emails are binned`;
+    DF.pops.push({ x: DF.W / 2, y: b.y + 40, text: `${b.name} defeated! ${n} emails +${pts}`, life: 1.8, color: '#ffd45e', big: true });
+    $('#dfTicker').textContent = `💥 Beat ${b.name}: all ${n} of their emails → ${OP_LABEL[b.lastShot]}`;
     SFX.play('bossdie');
     DF.boss = null;
     addCombo();
@@ -222,11 +238,10 @@ function dfUpdate(dt) {
   DF.slowT = Math.max(0, DF.slowT - dt); DF.tripleT = Math.max(0, DF.tripleT - dt);
   DF.cool = Math.max(0, DF.cool - dt);
   // turret
-  if (DF.keys.a) DF.turret.x -= 560 * dt;
-  if (DF.keys.d) DF.turret.x += 560 * dt;
+  if (DF.keys.a || DF.keys.arrowleft) DF.turret.x -= 560 * dt;
+  if (DF.keys.d || DF.keys.arrowright) DF.turret.x += 560 * dt;
   DF.turret.x = Math.max(28, Math.min(DF.W - 28, DF.turret.x));
-  if (DF.keys.s) fire('bin');
-  if (DF.keys.f) fire('keep');
+  for (const [key, shot] of Object.entries(FIRE_KEYS)) if (DF.keys[key]) fire(shot);
   // waves
   if (DF.breakT > 0) DF.breakT -= dt;
   else if (DF.waveLeft > 0) {
@@ -310,7 +325,7 @@ function dfDraw() {
     c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = '800 16px system-ui';
     c.fillText(`📣 ${b.name}`, b.x + b.w / 2, b.y + 24);
     c.font = '12px system-ui'; c.fillStyle = '#ffb3c1';
-    c.fillText(`${b.items.length} emails · bin it!`, b.x + b.w / 2, b.y + 43);
+    c.fillText(`${b.items.length} emails · J delete · K archive`, b.x + b.w / 2, b.y + 43);
     c.fillStyle = 'rgba(255,255,255,.15)'; c.fillRect(b.x + 16, b.y + b.h - 14, b.w - 32, 6);
     c.fillStyle = '#ff5d7a'; c.fillRect(b.x + 16, b.y + b.h - 14, (b.w - 32) * (b.hp / b.max), 6);
   }
@@ -330,7 +345,7 @@ function dfDraw() {
   }
   // shots
   for (const s of DF.shots) {
-    c.shadowColor = SHOT[s.kind].glow; c.shadowBlur = 14; c.strokeStyle = SHOT[s.kind].color; c.lineWidth = s.kind === 'keep' ? 6 : 4; c.lineCap = 'round';
+    c.shadowColor = SHOT[s.kind].glow; c.shadowBlur = 14; c.strokeStyle = SHOT[s.kind].color; c.lineWidth = s.kind === 'keep' || s.kind === 'reply' ? 6 : 4; c.lineCap = 'round';
     c.beginPath(); c.moveTo(s.x, s.y); c.lineTo(s.x - s.vx * 0.025, s.y - s.vy * 0.025); c.stroke();
   }
   c.shadowBlur = 0;
@@ -364,24 +379,24 @@ function endDefense(won) {
   cancelAnimationFrame(DF.raf);
   const newBest = DF.score > DF.best;
   if (newBest) store.set('defenseBest', DF.score);
-  const groups = { delete: [], archive: [], reply: [], read: [] };
+  const groups = { delete: [], archive: [], reply: [], keep: [] };
   DF.done.forEach((d) => { if (d.op) groups[d.op].push(d.t); });
   const rows = Object.entries(groups).filter(([, l]) => l.length);
   const shots = DF.right + DF.wrong;
   const acc = shots ? Math.round((100 * DF.right) / shots) : 0;
   const el = $('#defense');
-  el.innerHTML = `<div class="t-end bk-review">
+  setHTML(el, `<div class="t-end bk-review">
     <h1>${won ? 'Inbox defended! 🛡️' : DF.lives <= 0 ? 'Your inbox was overrun' : 'Run finished'}</h1>
     <div class="big">${DF.score}</div>
     <div class="dim">${newBest ? '🏆 New best score' : 'Best: ' + Math.max(DF.best, DF.score)}</div>
     <div class="t-stats"><div><b>${DF.wave}</b>wave</div><div><b>${acc}%</b>perfect calls</div><div><b>x${DF.maxCombo}</b>best combo</div><div><b>${DF.bossesBeaten}</b>bosses beaten</div><div><b>${DF.missed}</b>landed</div></div>
-    ${rows.length ? `<p><b>Nothing in your Gmail has changed yet.</b> Untick anything you don't want, then apply.</p>
+    ${rows.length ? `<p id="dfIntro"><b>Nothing in your Gmail has changed yet.</b> Untick anything you don't want, then apply.</p>
     <div class="df-groups">${rows.map(([op, list]) => `<details class="df-group"><summary><input type="checkbox" data-op="${op}" checked> <b>${OP_LABEL[op]}</b> · ${list.length} email${list.length > 1 ? 's' : ''}</summary>
       <ul>${list.map((t) => `<li><b>${esc(t.from)}</b> <span class="dim">${esc(t.subject || '(no subject)')}</span></li>`).join('')}</ul></details>`).join('')}</div>
-    <div class="t-end-btns"><button id="dfApply" class="primary">Apply</button><button id="dfDiscard">Discard, change nothing</button><button id="dfAgain">Play again</button></div>
+    <div class="t-end-btns"><button id="dfApply" class="primary">Apply changes</button><button id="dfAgain">Play again</button><button id="dfDiscard">${backLabel()}</button></div>
     <p id="dfStatus" class="dim"></p>`
-    : `<p class="dim">No decisions to apply.</p><div class="t-end-btns"><button id="dfAgain" class="primary">Play again</button><button id="dfDiscard">Back to mail</button></div>`}
-  </div>`;
+    : `<p class="dim">No decisions to apply.</p><div class="t-end-btns"><button id="dfAgain" class="primary">Play again</button><button id="dfDiscard">${backLabel()}</button></div>`}
+  </div>`);
   if (won) confetti();
   $('#dfDiscard').onclick = exitDefense;
   $('#dfAgain').onclick = () => { DF.on = false; startDefense(); };
@@ -389,32 +404,47 @@ function endDefense(won) {
   const apply = $('#dfApply');
   if (apply) apply.onclick = async () => {
     const chosen = [...el.querySelectorAll('summary input')].filter((x) => x.checked).map((x) => x.dataset.op);
-    apply.disabled = true;
+    DF.applying = true;
+    const btns = [...el.querySelectorAll('.t-end-btns button')];
+    btns.forEach((b) => (b.disabled = true));
     el.querySelectorAll('summary input').forEach((x) => (x.disabled = true));
-    const jobs = chosen.flatMap((op) => groups[op].map((t) => [t.id, op]));
-    const RUN = {
-      delete: (id) => S.backend.trash(id),
-      archive: (id) => S.backend.modify(id, [], ['INBOX', 'UNREAD']),
-      reply: (id) => S.backend.modify(id, ['STARRED'], []),
-      read: (id) => S.backend.modify(id, [], ['UNREAD']),
-    };
-    let done = 0, failed = 0;
-    for (const [id, op] of jobs) {
-      try { await RUN[op](id); } catch { failed++; }
-      $('#dfStatus').textContent = `Applying… ${++done} / ${jobs.length}`;
+    const jobs = chosen.flatMap((op) => groups[op].map((t) => [t, op]));
+    const say = (s) => { $('#dfStatus').textContent = s; };
+    let failed = 0, note = 'Starred ones are waiting for your reply.';
+    if (S.backend.applyAll) {
+      // bookmarklet: one batch per Gmail view and action, pressing Gmail's own buttons
+      const r = await S.backend.applyAll(jobs, say);
+      failed = r.failed;
+      note = r.note || '';
+    } else {
+      const RUN = {
+        delete: (id) => S.backend.trash(id),
+        archive: (id) => S.backend.modify(id, [], ['INBOX', 'UNREAD']),
+        reply: (id) => S.backend.modify(id, ['STARRED'], []),
+        keep: (id) => S.backend.modify(id, [], ['UNREAD']),
+      };
+      let done = 0;
+      for (const [t, op] of jobs) {
+        try { await RUN[op](t.id); } catch { failed++; }
+        say(`Applying… ${++done} / ${jobs.length}`);
+      }
     }
-    $('#dfStatus').textContent = `Done ✓ ${jobs.length - failed} emails updated${failed ? `, ${failed} failed` : ''}. Starred ones are waiting for your reply.`;
-    apply.textContent = 'Applied';
+    say(`Done ✓ ${jobs.length - failed} emails updated${failed ? `, ${failed} not changed` : ''}. ${note}`);
+    DF.applying = false;
+    $('#dfIntro').textContent = 'Applied to your Gmail.';
+    btns.forEach((b) => (b.disabled = b === apply));
+    apply.textContent = 'Applied ✓';
   };
 }
 
-// keys: a/d move, s bin, f keep (held = auto-fire), p pause, Esc finish
+// keys: A/D (or arrows) move · H reply · J delete · K archive · L keep (held = auto-fire) · P pause · Q/Esc finish
 function defenseKey(e, down = true) {
   const k = e.key.toLowerCase();
-  if ('asdf'.includes(k) && k.length === 1) { DF.keys[k] = down; if (down && (k === 's' || k === 'f')) fire(k === 's' ? 'bin' : 'keep'); return true; }
+  if (k === 'a' || k === 'd' || k === 'arrowleft' || k === 'arrowright') { DF.keys[k] = down; return true; }
+  if (FIRE_KEYS[k]) { if (down && !DF.keys[k]) fire(FIRE_KEYS[k]); DF.keys[k] = down; return true; }
   if (!down) return false;
   if (k === 'p') { DF.paused = !DF.paused; return true; }
-  if (k === 'escape') { endDefense(false); return true; }
+  if (k === 'q' || k === 'escape') { endDefense(false); return true; }
   return false;
 }
 window.addEventListener('keyup', (e) => { if (DF.on) defenseKey(e, false); });
@@ -425,9 +455,9 @@ function dfAuto() {
   const tgt = DF.cards.reduce((a, c) => (!a || c.y > a.y ? c : a), null);
   const aim = tgt ? tgt.x + tgt.w / 2 : DF.boss ? DF.boss.x + DF.boss.w / 2 : DF.W / 2;
   DF.keys.a = aim < DF.turret.x - 8; DF.keys.d = aim > DF.turret.x + 8;
-  DF.keys.s = DF.keys.f = false;
+  DF.keys.h = DF.keys.j = DF.keys.k = DF.keys.l = false;
   if (Math.abs(aim - DF.turret.x) < 30) {
-    if (tgt && tgt.y > 60) DF.keys[tgt.t.kind === 'person' ? 'f' : 's'] = true;
-    else if (!tgt && DF.boss) DF.keys.s = true;
+    if (tgt && tgt.y > 60) DF.keys[{ promo: 'j', update: 'k', person: (tgt.t.subject || '').length % 2 ? 'h' : 'l' }[tgt.t.kind]] = true;
+    else if (!tgt && DF.boss) DF.keys.j = true;
   }
 }

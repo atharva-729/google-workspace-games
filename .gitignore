@@ -3,3 +3,5 @@ pubkey.b64
 *.zip
 *.crx
 _check*.png
+notes/
+bookmarklet/dist/

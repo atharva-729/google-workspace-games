@@ -6,7 +6,13 @@ const BK_DROPS = { multi: '⚪', wide: '↔', sweep: '🧹' };
 
 function bkHash(s) { let h = 7; for (const c of s || '') h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
 
-async function fetchBricks() {
+// One load at a time: a second click while the first load is still running reuses it instead of doubling the API calls.
+let bricksLoad = null;
+function fetchBricks() {
+  return bricksLoad || (bricksLoad = loadBricks().finally(() => { bricksLoad = null; }));
+}
+
+async function loadBricks() {
   const be = S.backend;
   if (!be.live) { const r = await be.listThreads({ view: 'inbox' }); return r.threads.map((t) => ({ ...t, kind: classify(t) })); }
   const out = [], seen = new Set();
@@ -18,14 +24,17 @@ async function fetchBricks() {
 }
 
 async function startBreakout() {
-  if (T.active || BK.on) return;
+  if (T.active || BK.on || BK.loading || DF.on || DF.loading) return;
   closeThread(false);
   $('#main').classList.add('hidden');
   const el = $('#breakout');
   el.classList.remove('hidden');
   el.innerHTML = '<div class="status t-loading">Building the wall from your inbox…</div>';
   let items;
+  BK.loading = true;
   try { items = await fetchBricks(); } catch (e) { el.innerHTML = `<div class="status">Error: ${esc(e.message)}</div>`; return; }
+  finally { BK.loading = false; }
+  if (el.classList.contains('hidden')) return; // left while it was loading
   if (!items.some((t) => t.kind !== 'person')) {
     el.innerHTML = '<div class="t-end"><h1>No promos to smash 🎉</h1><div class="t-end-btns"><button id="bkBack" class="primary">Back to mail</button></div></div>';
     $('#bkBack').onclick = exitBreakout;

@@ -7,7 +7,7 @@
 - **Chrome extension, Manifest V3, plain HTML/CSS/JS, no build step.**
 - Clicking the toolbar button opens `app.html` in a full tab. That page is the whole client.
 - **Two backends, one interface** (`connect`, `listThreads`, `getThread`, `modify`):
-  - `gmail.js`: the official Gmail REST API. The token comes from `chrome.identity.getAuthToken` (Chrome only). Scope: `gmail.modify` (read, label, archive; it cannot delete permanently or send).
+  - `gmail.js`: the official Gmail REST API. The token comes from `chrome.identity.launchWebAuthFlow` with a Web application OAuth client (any Chromium browser). Scope: `gmail.modify` (read, label, archive; it cannot delete permanently or send).
   - `demo.js`: ~18 sample threads held in memory, so the client can be shown with no Google setup.
 - A fixed `key` in `manifest.json` keeps the extension ID stable, since the OAuth client is tied to that ID.
 - Gmail API calls: `threads.list` (inbox, starred, or a search query), `threads.get` (metadata for the list, full for reading), `threads.modify` (archive = remove `INBOX`, star = `STARRED`, read/unread = `UNREAD`), and `labels.get INBOX` for the true inbox count.
@@ -28,10 +28,9 @@
 - **Pages:** clearing the 25 threads on screen gives a +50 "page cleared" bonus and loads the next batch. When the inbox is really empty, a win screen shows score, time and best combo, with confetti. The best score is saved.
 - Archiving is safe: mail stays in All Mail, and `z` undoes.
 
-## Out of scope for v1 (next, depending on your feedback)
+## Out of scope for v1
 Compose/reply (needs the `gmail.send` scope), the labels sidebar, attachments, pagination outside game mode, the undocumented-endpoint route, and a Discourse version.
 
 ## Known limits
 - The Google app stays in **Testing**: the sign-in screen warns "unverified app", only listed test users can sign in, and the grant expires after 7 days.
-- `getAuthToken` uses the Google account signed into the **Chrome profile**, so use a profile signed into your personal account.
 - Remote images in emails load (as in most clients), which means senders' tracking pixels fire.
