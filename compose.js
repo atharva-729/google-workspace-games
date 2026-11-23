@@ -24,7 +24,7 @@ const Compose = {
     const t = (text || '').toLowerCase();
     const out = [];
     if (/\?/.test(t)) out.push('Yes, that works for me!', 'Sorry, I can’t make it this time.');
-    if (/b(review|take a look|have a look|check|comments?|feedback|by (monday|tuesday|wednesday|thursday|friday))b/.test(t)) out.push('On it, I’ll send comments by tomorrow.');
+    if (/\b(review|take a look|have a look|check|comments?|feedback|by (monday|tuesday|wednesday|thursday|friday))\b/.test(t)) out.push('On it, I’ll send comments by tomorrow.');
     if (/meet|coffee|call|hike|night|dinner|lunch|friday|saturday|sunday|weekend/.test(t)) out.push('Count me in! See you there.');
     out.push('Thanks so much!', 'Got it, I’ll get back to you soon.');
     return [...new Set(out)].slice(0, 5);
