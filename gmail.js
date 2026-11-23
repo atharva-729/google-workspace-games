@@ -1,30 +1,57 @@
-// Live backend: the official Gmail REST API, authorised through chrome.identity.
+// Live backend: the official Gmail REST API, authorised through chrome.identity.launchWebAuthFlow.
 // Same interface as DemoMail: connect, listThreads, getThread, modify.
 const GmailMail = (() => {
   const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
   const PAGE = 25;
   let token = null;
 
+  // Sign-in: a Google pop-up via chrome.identity.launchWebAuthFlow and a "Web application" OAuth client
+  // (works in any Chromium browser, Chrome profile signed in or not). Tokens last ~1 hour; renewal is silent.
+  const SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+  const TOK_KEY = 'ia.token';
+
+  function cached() {
+    try { const t = JSON.parse(localStorage.getItem(TOK_KEY)); return t && t.exp > Date.now() + 60e3 ? t.value : null; } catch { return null; }
+  }
+  function clearCached() { try { localStorage.removeItem(TOK_KEY); } catch {} }
+
   function getToken(interactive) {
     return new Promise((resolve, reject) => {
       if (!(window.chrome && chrome.identity)) return reject(new Error('Open this page from the extension (chrome.identity is missing).'));
-      chrome.identity.getAuthToken({ interactive }, (res) => {
+      if (typeof WEB_CLIENT_ID === 'undefined' || /^PASTE_/.test(WEB_CLIENT_ID)) return reject(new Error('Add your Web application client ID to config.js (see README).'));
+      const c = cached();
+      if (c) return resolve(c);
+      const params = new URLSearchParams({
+        client_id: WEB_CLIENT_ID,
+        response_type: 'token',
+        redirect_uri: chrome.identity.getRedirectURL(),
+        scope: SCOPE,
+        include_granted_scopes: 'true',
+      });
+      if (!interactive) params.set('prompt', 'none');
+      const hint = localStorage.getItem('ia.email');
+      if (hint) params.set('login_hint', JSON.parse(hint));
+      chrome.identity.launchWebAuthFlow({ url: 'https://accounts.google.com/o/oauth2/v2/auth?' + params, interactive }, (redirect) => {
         const err = chrome.runtime.lastError;
-        const t = res && (typeof res === 'string' ? res : res.token);
-        if (err || !t) return reject(new Error((err && err.message) || 'No token returned'));
-        resolve(t);
+        if (err || !redirect) return reject(new Error((err && err.message) || 'Sign-in was cancelled'));
+        const h = new URLSearchParams(new URL(redirect).hash.slice(1));
+        if (h.get('error')) return reject(new Error('Google said: ' + h.get('error')));
+        const value = h.get('access_token');
+        if (!value) return reject(new Error('No access token in the reply'));
+        try { localStorage.setItem(TOK_KEY, JSON.stringify({ value, exp: Date.now() + Number(h.get('expires_in') || 3600) * 1000 })); } catch {}
+        resolve(value);
       });
     });
   }
 
   async function api(path, opts = {}, retry = 1) {
-    if (!token) token = await getToken(true);
+    if (!token) token = await getToken(false).catch(() => getToken(true));
     const r = await fetch(API + path, {
       ...opts,
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
     });
     if (r.status === 401 && retry) {
-      await new Promise((res) => chrome.identity.removeCachedAuthToken({ token }, res));
+      clearCached();
       token = null;
       return api(path, opts, 0);
     }
@@ -103,12 +130,14 @@ const GmailMail = (() => {
   return {
     live: true,
     async connect(interactive = true) {
-      token = await getToken(interactive);
+      token = await getToken(false).catch((e) => (interactive ? getToken(true) : Promise.reject(e)));
       const p = await api('/profile');
+      try { localStorage.setItem('ia.email', JSON.stringify(p.emailAddress)); } catch {}
       return p.emailAddress;
     },
     async signOut() {
-      if (token) await new Promise((res) => chrome.identity.removeCachedAuthToken({ token }, res));
+      if (token) fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(token), { method: 'POST' }).catch(() => {});
+      clearCached();
       token = null;
     },
     async listThreads({ view, q, pageToken, max }) {

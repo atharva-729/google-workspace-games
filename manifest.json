@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "description": "A new front end for Gmail on the official API, with an Inbox Zero game mode.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApeNniCWgP3BuOF5igLwJbF9LZL3NeII55xmSbs2d7jzAZ+g6wXYz6vF19VnXhRDRVhzD6oCCh5n5S/v+VvnU4kbie4/WjIhHwgTR9wOI/S6HZ03rXEnXmiuqYewEUVcNf/joIv+TQXHg9t7t48WiyWY9e4aqmXhOFcnjqWwSYojGiVluuKCgqDsez9m+NXU68fzu7ataW5k2JifcFQP+OJ1f2dHgd1cHvjCKNCxWYI/4YDg+i15BSvnoZJmKoj8PCy0KFLNims9ux9hmy6WRrkB6o81uwsxs7ldh4lo6SYJWonPIrgCDk7azfLFecH9aFnnYH8Dp09BIcXZR1iDgfQIDAQAB",
-  "action": { "default_title": "Open Inbox Arcade" },
-  "background": { "service_worker": "background.js" },
-  "permissions": ["identity"],
-  "host_permissions": ["https://gmail.googleapis.com/*"],
-  "oauth2": {
-    "client_id": "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com",
-    "scopes": ["https://www.googleapis.com/auth/gmail.modify"]
-  }
+  "action": {
+    "default_title": "Open Inbox Arcade"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "identity"
+  ],
+  "host_permissions": [
+    "https://gmail.googleapis.com/*"
+  ]
 }

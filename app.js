@@ -10,7 +10,7 @@ const S = { backend: null, who: '', view: 'inbox', q: '', threads: [], total: 0,
 
 // ---------------------------------------------------------------- start
 function clientIdMissing() {
-  try { return /^PASTE_/.test(chrome.runtime.getManifest().oauth2.client_id); } catch { return true; }
+  try { return typeof WEB_CLIENT_ID === 'undefined' || /^PASTE_/.test(WEB_CLIENT_ID); } catch { return true; }
 }
 
 function showLanding(msg) {
