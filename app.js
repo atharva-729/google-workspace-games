@@ -39,6 +39,11 @@ async function start() {
       await new Promise((r) => setTimeout(r, 450));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: k === '~' ? 'Escape' : k }));
     }
+    // test hook: &sim=N runs N Breakout physics frames (headless Chrome barely animates)
+    const sim = Number(params.get('sim') || 0);
+    if (BK.on) for (let f = 0; f < sim && BK.on && !BK.over; f++) { BK.paddle.x = Math.max(0, Math.min(BK.W - BK.paddle.w, (BK.balls[0] ? BK.balls[0].x : BK.W / 2) - BK.paddle.w / 2)); bkUpdate(1 / 60); }
+    if (BK.on) bkDraw();
+    if (params.has('end') && BK.on) endBreakout(false);
     return;
   }
   const mode = store.get('mode');
@@ -261,6 +266,7 @@ function closeThread(render = true) {
 
 // ---------------------------------------------------------------- effects
 $('#gameToggle').onclick = startTriage;
+$('#breakoutBtn').onclick = startBreakout;
 function floatText(anchor, text) {
   const r = (anchor || $('#list')).getBoundingClientRect();
   const f = document.createElement('div');
@@ -305,6 +311,11 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.target.matches && e.target.matches('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
   if ($('#app').classList.contains('hidden')) return;
+  if (!$('#breakout').classList.contains('hidden')) {
+    if (BK.on) { if (breakoutKey(e, true)) e.preventDefault(); }
+    else if (e.key === 'Escape') exitBreakout();
+    return;
+  }
   if (!$('#triage').classList.contains('hidden')) {
     if (T.active) { if (triageKey(e)) e.preventDefault(); }
     else if (e.key === 'Escape' || e.key === 'Enter') exitTriage();
@@ -333,6 +344,7 @@ document.addEventListener('keydown', (e) => {
     r: () => (inThread ? openReply() : loadList()),
     '/': () => $('#search').focus(),
     g: () => startTriage(),
+    b: () => startBreakout(),
     '?': () => $('#help').classList.remove('hidden'),
   };
   if (map[k]) { e.preventDefault(); map[k](); }
@@ -342,11 +354,13 @@ start();
 
 // ---------------------------------------------------------------- controls bar (bottom)
 const KEYBARS = {
-  list: [['j / k', 'move'], ['Enter', 'open'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'read / unread'], ['z', 'undo'], ['/', 'search'], ['g', 'Triage run'], ['?', 'help']],
+  list: [['j / k', 'move'], ['Enter', 'open'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'read / unread'], ['z', 'undo'], ['/', 'search'], ['g', 'Triage run'], ['b', 'Breakout'], ['?', 'help']],
   thread: [['r', 'reply'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'mark unread'], ['j / k', 'next / prev email'], ['z', 'undo'], ['Esc', 'back']],
   triage: [['r', 'reply'], ['Space', 'read & keep'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['l', 'later'], ['Shift+D / E', 'delete / archive all from sender'], ['z', 'undo'], ['Esc', 'finish']],
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
+  breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
+  review: [['Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;
 setInterval(() => {
@@ -355,9 +369,10 @@ setInterval(() => {
   bar.classList.toggle('hidden', !appOn);
   if (!appOn) return;
   const inTriage = !$('#triage').classList.contains('hidden');
+  const inBreakout = !$('#breakout').classList.contains('hidden');
   const composing = !!document.querySelector('.composer');
-  const mode = composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
+  const mode = inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
   if (mode === keybarMode) return;
   keybarMode = mode;
-  bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span><kbd>${esc(k)}</kbd> ${esc(v)}</span>`).join('');
+  bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span>${k ? `<kbd>${esc(k)}</kbd> ` : ''}${esc(v)}</span>`).join('');
 }, 200);

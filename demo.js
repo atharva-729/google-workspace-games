@@ -29,6 +29,14 @@ const DemoMail = (() => {
     ['Newsletter', 'digest@news.example.com', 'promo', 'Your weekly digest', 'Top stories you may have missed this week.', 8 * 24, [], [], true],
   ];
 
+  // extra (already read) promos so the Breakout wall is full
+  const PROMO_SENDERS = [['ShopMart', 'deals@shopmart.example.com'], ['FitClub', 'offers@fitclub.example.com'], ['TravelNow', 'deals@travelnow.example.com'], ['PizzaHub', 'offers@pizzahub.example.com'], ['StreamBox', 'hello@streambox.example.com'], ['GadgetZone', 'news@gadgetzone.example.com']];
+  const PROMO_SUBJ = ['Weekend sale: up to 50% off', 'Your exclusive coupon inside', 'New this week', 'Last chance!', 'We picked these for you', 'Free delivery today only', 'Members-only early access', 'Don’t miss out'];
+  for (let i = 0; i < 26; i++) {
+    const [n, e] = PROMO_SENDERS[i % PROMO_SENDERS.length];
+    SEED.push([n, e, 'promo', PROMO_SUBJ[i % PROMO_SUBJ.length], '<p>' + PROMO_SUBJ[i % PROMO_SUBJ.length] + '. Tap to shop.</p>', 30 + i * 9, [], [], true]);
+  }
+
   let db = [];
   function reset() {
     const now = Date.now();
