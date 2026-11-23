@@ -1,0 +1,5 @@
+key.pem
+pubkey.b64
+*.zip
+*.crx
+_check*.png
