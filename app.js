@@ -339,3 +339,25 @@ document.addEventListener('keydown', (e) => {
 });
 
 start();
+
+// ---------------------------------------------------------------- controls bar (bottom)
+const KEYBARS = {
+  list: [['j / k', 'move'], ['Enter', 'open'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'read / unread'], ['z', 'undo'], ['/', 'search'], ['g', 'Triage run'], ['?', 'help']],
+  thread: [['r', 'reply'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['u', 'mark unread'], ['j / k', 'next / prev email'], ['z', 'undo'], ['Esc', 'back']],
+  triage: [['r', 'reply'], ['Space', 'read & keep'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['l', 'later'], ['Shift+D / E', 'delete / archive all from sender'], ['z', 'undo'], ['Esc', 'finish']],
+  compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
+  end: [['Enter / Esc', 'back to mail']],
+};
+let keybarMode = null;
+setInterval(() => {
+  const bar = $('#keybar');
+  const appOn = !$('#app').classList.contains('hidden');
+  bar.classList.toggle('hidden', !appOn);
+  if (!appOn) return;
+  const inTriage = !$('#triage').classList.contains('hidden');
+  const composing = !!document.querySelector('.composer');
+  const mode = composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
+  if (mode === keybarMode) return;
+  keybarMode = mode;
+  bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span><kbd>${esc(k)}</kbd> ${esc(v)}</span>`).join('');
+}, 200);

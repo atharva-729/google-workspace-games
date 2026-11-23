@@ -152,3 +152,9 @@ main { max-width: 1100px; margin: 16px auto; padding: 0 20px 80px; }
 .t-unsub ul { margin: 6px 0 0; padding-left: 18px; }
 .t-unsub a { color: var(--accent); margin-left: 6px; }
 .t-end-btns { display: flex; gap: 10px; justify-content: center; }
+
+/* ---------- controls bar ---------- */
+.keybar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--line); color: var(--dim); font-size: .82rem; }
+.keybar kbd { font: 600 .75rem ui-monospace, Consolas, monospace; color: var(--text); background: var(--accent-soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin-right: 2px; }
+.toast { bottom: 64px; }
+#triage { padding-bottom: 90px; }
