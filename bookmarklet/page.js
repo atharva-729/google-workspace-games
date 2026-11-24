@@ -1,5 +1,5 @@
-// Mail Defense as a bookmarklet: the page side. build.js wraps this file, then ../defense.js, then the start
-// call, in one function, so nothing leaks into Gmail's page. Gmail enforces Trusted Types, so HTML goes
+// The games as bookmarklets: the page side, shared by every game. build.js wraps this file, then the game's own
+// file (../defense.js or ../breakout.js) and a small GAME adapter, in one function, so nothing leaks into Gmail's page. Gmail enforces Trusted Types, so HTML goes
 // through our own policy, and the game lives in a shadow root.
 // Reading: the rows Gmail draws for each inbox tab (no sign-in, no API calls).
 // Applying: tick the rows' checkboxes and press Gmail's own toolbar buttons, one batch per tab and action.
@@ -27,7 +27,7 @@ host.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#1113
 const root = host.attachShadow({ mode: 'open' });
 const wrap = document.createElement('div');
 wrap.className = 'ia-root';
-setHTML(wrap, '<i class="ia-check"></i><div id="main" class="hidden"></div><section id="defense"></section>');
+setHTML(wrap, '<i class="ia-check"></i><div id="main" class="hidden"></div><section id="defense"></section><section id="breakout"></section>');
 root.appendChild(wrap);
 document.body.appendChild(host);
 const $ = (s) => root.querySelector(s);
@@ -47,7 +47,7 @@ const $ = (s) => root.querySelector(s);
 })();
 
 function closeArcade() {
-  if (typeof DF !== 'undefined') { DF.on = false; cancelAnimationFrame(DF.raf); }
+  GAME.stop();
   ['keydown', 'keyup', 'keypress'].forEach((t) => window.removeEventListener(t, onKey, true));
   host.remove();
 }
@@ -57,15 +57,14 @@ function onKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   e.stopImmediatePropagation();
   if (e.type === 'keypress') return;
-  if (e.type === 'keyup') { if (DF.on) defenseKey(e, false); return; }
-  if (DF.on) { if (defenseKey(e)) e.preventDefault(); }
-  else if (defenseMenuKey(e)) e.preventDefault();
-  else if ((e.key === 'Escape' || e.key.toLowerCase() === 'q') && !applying) closeArcade();
+  const down = e.type === 'keydown';
+  if (GAME.key(e, down)) e.preventDefault();
+  else if (down && (e.key === 'Escape' || e.key.toLowerCase() === 'q') && !applying) closeArcade();
 }
 ['keydown', 'keyup', 'keypress'].forEach((t) => window.addEventListener(t, onKey, true));
 
-// ---- what defense.js expects from the extension's app
-const T = { active: false }, BK = { on: false };
+// ---- what the games expect from the extension's app (the other game's state comes with GAME)
+const T = { active: false };
 function closeThread() {}
 function loadList() { closeArcade(); } // "back to mail" = close the overlay
 function confetti() {}
@@ -143,7 +142,7 @@ function readRows(view, category, people) {
 // Mail: the list you have open, plus the Promotions, Social and Updates tabs when you're on the inbox.
 const START = location.hash || '#inbox';
 async function fetchBricks() {
-  const say = (s) => { const x = $('#defense .t-loading'); if (x) x.textContent = s; };
+  const say = (s) => { const x = $('.t-loading'); if (x) x.textContent = s; };
   if (!visibleRows().length) throw new Error('No email list on screen. Open your inbox (or a tab, label or search) in Gmail, then click the bookmark again.');
   const tabs = /^#inbox$/.test(START) && [...document.querySelectorAll('[role="tab"]')].some(shown);
   say('Checking who you write to…');

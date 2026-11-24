@@ -44,7 +44,8 @@ async function start() {
     // test hook: &sim=N runs N Breakout physics frames (headless Chrome barely animates)
     const sim = Number(params.get('sim') || 0);
     if (sim) await new Promise((r) => setTimeout(r, 700));
-    if (BK.on) for (let f = 0; f < sim && BK.on && !BK.over; f++) { BK.paddle.x = Math.max(0, Math.min(BK.W - BK.paddle.w, (BK.balls[0] ? BK.balls[0].x : BK.W / 2) - BK.paddle.w / 2)); bkUpdate(1 / 60); }
+    if (BK.menu) pickBkPace('normal');
+    if (BK.on) for (let f = 0; f < sim && BK.on && !BK.over; f++) { bkAuto(); bkUpdate(1 / 60); }
     if (BK.on) bkDraw();
     if (params.has('end') && BK.on) endBreakout(false);
     // Mail Defense autoplayer for tests
@@ -142,6 +143,23 @@ function leaveLoadingGame() {
     $(id).innerHTML = '';
     $('#main').classList.remove('hidden');
   });
+}
+
+// Mail for the games (Breakout's wall, Defense's waves), from the Gmail API or the demo.
+// One load at a time: a second click while the first load is still running reuses it instead of doubling the API calls.
+let bricksLoad = null;
+function fetchBricks() {
+  return bricksLoad || (bricksLoad = loadBricks().finally(() => { bricksLoad = null; }));
+}
+async function loadBricks() {
+  const be = S.backend;
+  if (!be.live) { const r = await be.listThreads({ view: 'inbox' }); return r.threads.map((t) => ({ ...t, kind: classify(t) })); }
+  const out = [], seen = new Set();
+  for (const [q, max, kind] of [['in:inbox category:promotions', 40, 'promo'], ['in:inbox category:updates', 14, 'update'], ['in:inbox category:primary is:unread', 8, null]]) {
+    const r = await be.listThreads({ view: 'search', q, max });
+    r.threads.forEach((t) => { if (!seen.has(t.id)) { seen.add(t.id); out.push({ ...t, kind: kind || classify(t) }); } });
+  }
+  return out;
 }
 
 window.addEventListener('gmail-wait', (e) => toast(`Gmail asked us to slow down. Retrying in ${Math.ceil(e.detail / 1000)} s…`));
@@ -342,7 +360,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (!$('#breakout').classList.contains('hidden')) {
     if (BK.on) { if (breakoutKey(e, true)) e.preventDefault(); }
-    else if (e.key === 'Escape') exitBreakout();
+    else if (breakoutMenuKey(e)) e.preventDefault();
+    else if ((e.key === 'Escape' || e.key.toLowerCase() === 'q') && !BK.applying) exitBreakout();
     return;
   }
   if (!$('#triage').classList.contains('hidden')) {
@@ -389,7 +408,8 @@ const KEYBARS = {
   triage: [['r', 'reply'], ['Space', 'read & keep'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['l', 'later'], ['Shift+D / E', 'delete / archive all from sender'], ['z', 'undo'], ['Esc', 'finish']],
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
-  breakout: [['← → / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Esc', 'finish & review'], ['👤', 'steel = people, can’t break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
+  breakout: [['A / D / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Q / Esc', 'finish & review'], ['👤', 'steel = people, never break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
+  bkmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['Esc', 'back to mail']],
   defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['P', 'pause'], ['Q / Esc', 'finish & review']],
   dfmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['Esc', 'back to mail']],
   review: [['Q / Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
@@ -404,7 +424,7 @@ setInterval(() => {
   const inBreakout = !$('#breakout').classList.contains('hidden');
   const inDefense = !$('#defense').classList.contains('hidden');
   const composing = !!document.querySelector('.composer');
-  const mode = inDefense ? (DF.on ? 'defense' : DF.menu ? 'dfmenu' : 'review') : inBreakout ? (BK.on ? 'breakout' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
+  const mode = inDefense ? (DF.on ? 'defense' : DF.menu ? 'dfmenu' : 'review') : inBreakout ? (BK.on ? 'breakout' : BK.menu ? 'bkmenu' : 'review') : composing ? 'compose' : inTriage ? (T.active ? 'triage' : 'end') : S.open ? 'thread' : 'list';
   if (mode === keybarMode) return;
   keybarMode = mode;
   bar.innerHTML = KEYBARS[mode].map(([k, v]) => `<span>${k ? `<kbd>${esc(k)}</kbd> ` : ''}${esc(v)}</span>`).join('');
