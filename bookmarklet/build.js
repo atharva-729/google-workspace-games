@@ -40,6 +40,7 @@ startBreakout();`),
 ];
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true }); // gitignored, so a fresh clone lacks it
 const items = BOOKMARKLETS.map((b) => {
   const code = squeeze(b.code());
   fs.writeFileSync(path.join(__dirname, 'dist', b.id + '.js'), code); // for tests
