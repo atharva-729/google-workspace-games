@@ -1,5 +1,5 @@
-// Promo Breakout: your inbox as a brick wall. Promotions and updates break. People are steel bricks,
-// scattered at random through the wall: they never break, and their mail is never touched.
+// Promo Breakout: your inbox as a brick wall. Promotions and updates break. People (and meeting notes) are
+// steel bricks, scattered at random through the wall: they never break, and their mail is never touched.
 // Pick a pace: the ball keeps speeding up until that pace's top speed, then holds there. Clear a wall and the
 // next one is built from the rest of your mail, so every email gets a brick. Two bests per pace: points, and
 // emails cleared. Q or Esc finishes. Nothing changes in Gmail until you review and apply.
@@ -28,6 +28,7 @@ function bkBestFor(pace) {
   const old = store.get('breakoutBest'); // single best from before paces existed counts as Normal
   return { score: b.score || (pace === 'normal' && typeof old === 'number' ? old : 0), cleared: b.cleared || 0 };
 }
+const isSteel = (t) => t.kind === 'person' || t.kind === 'notes';
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 async function startBreakout() {
@@ -43,13 +44,13 @@ async function startBreakout() {
   try { items = await fetchBricks(); } catch (e) { if (!el.classList.contains('hidden')) back(`<p class="status">${esc(e.message)}</p>`); return; }
   finally { BK.loading = false; }
   if (el.classList.contains('hidden')) return; // left while it was loading
-  if (!items.some((t) => t.kind !== 'person')) { back('<h1>Nothing to smash 🎉</h1><p class="dim">Everything on screen is from people.</p>'); return; }
+  if (!items.some((t) => !isSteel(t))) { back('<h1>Nothing to smash 🎉</h1><p class="dim">Everything on screen is from people.</p>'); return; }
   breakoutMenu(items);
 }
 
 function breakoutMenu(items) {
   const el = $('#breakout'), last = store.get('breakoutPace') || 'normal';
-  const n = items.filter((t) => t.kind !== 'person').length, walls = Math.ceil(n / WALL_SIZE);
+  const n = items.filter((t) => !isSteel(t)).length, walls = Math.ceil(n / WALL_SIZE);
   BK.menu = { items, last };
   setHTML(el, `<div class="t-end df-menu"><h1>🧱 Promo Breakout</h1>
     <p class="dim">${n} emails to smash${walls > 1 ? ` across ${walls} walls` : ''}. People are steel bricks: they never break.
@@ -102,9 +103,9 @@ function setupBreakout(items, pace) {
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
   // every breakable email, grouped by sender so a sender's bricks sit together; walls are cut from this pool
-  const pool = items.filter((t) => t.kind !== 'person').sort((a, b) => (a.from || '').localeCompare(b.from || '') || String(a.id).localeCompare(String(b.id)));
+  const pool = items.filter((t) => !isSteel(t)).sort((a, b) => (a.from || '').localeCompare(b.from || '') || String(a.id).localeCompare(String(b.id)));
   Object.assign(BK, {
-    on: true, ended: false, applying: false, ctx, cv, W, H, pace, pool, people: shuffle(items.filter((t) => t.kind === 'person')), peopleAt: 0,
+    on: true, ended: false, applying: false, ctx, cv, W, H, pace, pool, people: shuffle(items.filter(isSteel)), peopleAt: 0,
     walls: Math.ceil(pool.length / WALL_SIZE), wallNo: 0, bricks: [], broken: [], score: 0, lives: P.lives, chain: 0,
     paused: false, over: false, t: 0, clearT: 0, topSpeed: false, banner: null,
     paddle: { x: W / 2 - P.paddle / 2, w: P.paddle, y: H - 26, h: 12 }, balls: [], drops: [], parts: [], pops: [],
@@ -129,23 +130,23 @@ function nextWall() {
   const total = list.length + steel.length, cols = total > 40 ? 9 : 8;
   // random spots for the steel, avoiding a layout where a brick is boxed in by steel on its left, right and
   // underside (the ball could never reach it)
-  let isSteel;
+  let slot;
   for (let tries = 0; tries < 30; tries++) {
-    isSteel = new Array(total).fill(false);
-    shuffle([...Array(total).keys()]).slice(0, steel.length).forEach((i) => (isSteel[i] = true));
+    slot = new Array(total).fill(false);
+    shuffle([...Array(total).keys()]).slice(0, steel.length).forEach((i) => (slot[i] = true));
     const boxed = (i) => {
-      const c = i % cols, s = (j, ok) => !ok || j >= total || isSteel[j];
-      return s(i - 1, c > 0) && s(i + 1, c < cols - 1) && i + cols < total && isSteel[i + cols];
+      const c = i % cols, s = (j, ok) => !ok || j >= total || slot[j];
+      return s(i - 1, c > 0) && s(i + 1, c < cols - 1) && i + cols < total && slot[i + cols];
     };
-    if (!isSteel.some((v, i) => !v && boxed(i))) break;
+    if (!slot.some((v, i) => !v && boxed(i))) break;
   }
   let a = 0, b = 0;
-  const order = isSteel.map((v) => (v ? steel[b++] : list[a++]));
+  const order = slot.map((v) => (v ? steel[b++] : list[a++]));
   const gap = 6, mx = 16, top = 16, bh = 26, bw = (W - 2 * mx - (cols - 1) * gap) / cols;
   BK.bricks = order.map((t, i) => {
     const pal = BK_COLORS[t.kind] || ['#999'];
     return { x: mx + (i % cols) * (bw + gap), y: top + Math.floor(i / cols) * (bh + gap), w: bw, h: bh, t,
-      steel: t.kind === 'person', alive: true, flash: 0, color: pal[bkHash(t.fromEmail) % pal.length] };
+      steel: isSteel(t), alive: true, flash: 0, color: pal[bkHash(t.fromEmail) % pal.length] };
   });
   BK.drops = [];
   newBall();
@@ -269,7 +270,7 @@ function bkUpdate(dt) {
         const ox = (b.x - (k.x + k.w / 2)) / (k.w / 2), oy = (b.y - (k.y + k.h / 2)) / (k.h / 2);
         if (Math.abs(ox) > Math.abs(oy)) { b.vx = Math.sign(ox || 1) * Math.abs(b.vx); b.x = ox > 0 ? k.x + k.w + b.r : k.x - b.r; }
         else { b.vy = Math.sign(oy || 1) * Math.abs(b.vy); b.y = oy > 0 ? k.y + k.h + b.r : k.y - b.r; }
-        if (k.steel) { k.flash = 0.25; $('#bkTicker').textContent = `👤 ${k.t.from} is a person: steel. Their email stays as it is.`; }
+        if (k.steel) { k.flash = 0.25; $('#bkTicker').textContent = k.t.kind === 'notes' ? `📝 Meeting notes: steel. They stay in your inbox.` : `👤 ${k.t.from} is a person: steel. Their email stays as it is.`; }
         else breakBrick(k);
         break;
       }
@@ -319,7 +320,7 @@ function bkDraw() {
     c.fillStyle = k.steel ? '#ffffff' : 'rgba(255,255,255,.95)';
     c.font = '600 11px "Segoe UI", system-ui, sans-serif';
     c.textAlign = 'left';
-    c.fillText((k.steel ? '👤 ' : '') + (k.t.from || '?'), k.x + 8, k.y + k.h / 2 + 1);
+    c.fillText((k.steel ? (k.t.kind === 'notes' ? '📝 ' : '👤 ') : '') + (k.t.from || '?'), k.x + 8, k.y + k.h / 2 + 1);
     c.restore();
   }
   for (const d of BK.drops) {

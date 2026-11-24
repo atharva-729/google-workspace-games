@@ -94,8 +94,17 @@ async function go(hash) {
 }
 
 // ---- who is a person?
-// A person is someone you have written to, someone in a thread you're part of, or a personal mailbox
-// (gmail.com, outlook.com, …) that isn't an automated address. A company you never wrote to is an update.
+// Checked in this order, first match wins:
+// 1. Meeting notes from Gemini are 'notes': never deleted or archived, whatever tab Gmail put them in.
+// 2. Gmail's inbox tab (Promotions, Social, Updates), when tabs are on.
+// 3. Team and role senders are updates, even from your own company: HR, IT, announcements, communications,
+//    helpdesks, payroll, HR/IT tools (Darwinbox, Workday, ServiceNow, …), noreply and the like. Found by words
+//    in the address or the display name.
+// 4. People: someone you have written to, or a thread you're part of.
+// 5. Probably people: a personal mailbox (gmail.com, outlook.com, …), or a colleague on your own domain whose
+//    display name looks like a person's name. (Calling a team a person costs little; the other way round can
+//    lose a real person's email, so when unsure it's a person.)
+// Everything else is an update.
 const ME = ((document.title.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [''])[0]).toLowerCase();
 const MY_DOMAIN = ME.split('@')[1] || '';
 const PERSONAL = /^(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|pm|rediffmail|zoho|yandex|gmx|mail|fastmail|hey)\.[a-z.]+$/i;
@@ -112,18 +121,28 @@ async function sentTo() {
   return new Set(list);
 }
 
-function kindOf(t, row, people) {
+const isNotes = (t) => /^gemini-notes@/i.test(t.fromEmail) || (/\bgemini\b/i.test(t.from) && /\bnotes?\b/i.test(t.from + ' ' + t.subject));
+// one whole piece of the address, split at . _ - + (so "it.announcements@" and "hr@" match, "smith@" doesn't)
+const ROLE_TOKEN = /^(hr|it|itsupport|ithelp|ithelpdesk|helpdesk|servicedesk|support|announce|announcements?|communications?|comms|corpcomms?|internalcomms|newsletters?|payroll|benefits|facilities|admin|administration|all|allstaff|everyone|staff|people|peopleops|talent|recruitment|recruiting|careers|training|learning|compliance|legal|finance|accounts|security|events?|operations|office|team|portal|notifications?|alerts?|digest|updates?|calendar|noreply|donotreply)$/i;
+const ROLE_NAME = /\b(human resources|announcements?|communications?|comms|help ?desk|service ?desk|support|payroll|benefits|facilities|administration|newsletters?|notifications?|team|office of|operations|recruitment|talent acquisition|learning|training|compliance|no-?reply|digest|portal)\b/i;
+const ROLE_ACRONYM = /(^|[^A-Za-z])(IT|HR|L&D)([^A-Za-z]|$)/; // capitals only
+const TOOLS = /\b(darwinbox|workday|myworkday|successfactors|sapsf|servicenow|service-now|keka|greythr|bamboohr|freshservice|freshdesk|zendesk|atlassian|docusign)\b/i;
+const isRole = (t, local, domain) => local.split(/[-_.+]/).some((w) => ROLE_TOKEN.test(w)) ||
+  ROLE_NAME.test(t.from) || ROLE_ACRONYM.test(t.from) || TOOLS.test(t.from) || TOOLS.test(domain);
+const looksLikeName = (s) => /^[\p{L}][\p{L}'’.-]*(\s+[\p{L}][\p{L}'’.-]*){1,3}$/u.test((s || '').trim());
+
+function kindOf(t, people) {
+  if (isNotes(t)) return 'notes';
   if (t.category) return t.category;
   const e = t.fromEmail.toLowerCase(), [local = '', domain = ''] = e.split('@');
-  if (people.has(e)) return 'person';
-  if (ME && [...row.querySelectorAll('span[email]')].some((s) => s.getAttribute('email').toLowerCase() === ME)) return 'person';
-  if (AUTOMATED.test(local) || BULK_DOMAIN.test(domain)) return PROMO_HINT.test(local) ? 'promo' : 'update';
-  if (PERSONAL.test(domain)) return 'person';
-  if (MY_DOMAIN && domain === MY_DOMAIN && !PERSONAL.test(MY_DOMAIN)) return 'person';
+  if (isRole(t, local, domain) || AUTOMATED.test(local) || BULK_DOMAIN.test(domain)) return PROMO_HINT.test(local) ? 'promo' : 'update';
+  if (people.has(e) || t.withMe) return 'person';
+  const colleague = MY_DOMAIN && domain === MY_DOMAIN && !PERSONAL.test(MY_DOMAIN) && looksLikeName(t.from);
+  if (PERSONAL.test(domain) || colleague) return 'person';
   return 'update';
 }
 
-function readRows(view, category, people) {
+function readRows(view, category) {
   return visibleRows().map((row) => {
     const idEl = row.querySelector('[data-legacy-thread-id]');
     const fromEl = row.querySelector('span[email]');
@@ -134,8 +153,9 @@ function readRows(view, category, people) {
       subject: ((row.querySelector('.bog') || idEl || {}).textContent || '').trim(),
       snippet: ((row.querySelector('.y2') || {}).textContent || '').replace(/^\s*-\s*/, '').trim(),
       unread: row.classList.contains('zE'),
+      withMe: !!ME && [...row.querySelectorAll('span[email]')].some((s) => s.getAttribute('email').toLowerCase() === ME),
     };
-    return { ...t, kind: kindOf(t, row, people) };
+    return t;
   });
 }
 
@@ -151,14 +171,14 @@ async function fetchBricks() {
   if (tabs) {
     for (const [hash, cat, label] of [['#category/promotions', 'promo', 'Promotions'], ['#category/social', 'update', 'Social'], ['#category/updates', 'update', 'Updates']]) {
       say(`Reading ${label}…`);
-      if (await go(hash)) out.push(...readRows(hash, cat, people));
+      if (await go(hash)) out.push(...readRows(hash, cat));
     }
   }
   if (!(await go(START))) throw new Error('Gmail did not switch back to your list. Close this and click the bookmark again.');
   const startCat = /category\/promotions/.test(START) ? 'promo' : /category\/(social|updates|forums)/.test(START) ? 'update' : null;
-  out.push(...readRows(START, startCat, people));
+  out.push(...readRows(START, startCat));
   const seen = new Set();
-  return out.filter((t) => t.id && !seen.has(t.id) && seen.add(t.id));
+return out.filter((t) => t.id && !seen.has(t.id) && seen.add(t.id)).map((t) => ({ ...t, kind: kindOf(t, people) }));
 }
 
 // ---- applying results with Gmail's own buttons

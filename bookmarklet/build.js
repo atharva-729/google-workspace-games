@@ -24,7 +24,7 @@ const BOOKMARKLETS = [
     controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move (or the arrow keys)'], ['<kbd>H</kbd>', 'reply: stars it so you reply later'], ['<kbd>J</kbd>', 'delete'], ['<kbd>K</kbd>', 'archive'], ['<kbd>L</kbd>', 'keep: stays in the inbox, marked read'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
     code: () => bundle('../defense.js', `const BK = { on: false };
 const GAME = { stop() { DF.on = false; DF.menu = null; cancelAnimationFrame(DF.raf); }, key: (e, down) => (DF.on ? defenseKey(e, down) : down && defenseMenuKey(e)) };
-if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense, pickPace, paceNow };
+if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense, pickPace, paceNow, fire };
 startDefense();`),
   },
   {
@@ -98,7 +98,7 @@ ${items.map((b) => `<section class="game">
 <h2>Is it safe?</h2>
 <ul>
   <li><mark>Nothing changes until you press Apply.</mark> At the end you see every decision, grouped, and can untick any group.</li>
-  <li>Apply uses Gmail's own buttons (Delete, Archive, Mark as read, Add star) on exactly the emails you chose. Mail from people is never deleted. Deleted mail stays in Trash for 30 days, and archived mail stays in All Mail.</li>
+  <li>Apply uses Gmail's own buttons (Delete, Archive, Mark as read, Add star) on exactly the emails you chose. Emails that look like they're from people are never ticked for deletion: you tick them yourself. Meeting notes from Gemini are never deleted or archived. Deleted mail stays in Trash for 30 days, and archived mail stays in All Mail.</li>
   <li>The game runs only in your Gmail tab. It reads the emails Gmail has already shown you. It has no server and sends your mail nowhere. Your best score and a list of people you write to (used to tell people from companies) are kept in your own browser.</li>
   <li>The code is open: <a href="${REPO}">${REPO.replace('https://', '')}</a>.</li>
 </ul>

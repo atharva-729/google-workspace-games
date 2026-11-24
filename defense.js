@@ -5,19 +5,22 @@
 // you and shoots back. Two best scores per pace: points, and emails cleared. Nothing changes in Gmail until
 // you review and apply.
 const DF = { on: false };
-const DF_ICON = { promo: '🏷️', update: '🔔', person: '👤' };
-const DF_COLOR = { promo: '#ff6b8b', update: '#4fb8ff', person: '#3ddc97' };
+const DF_ICON = { promo: '🏷️', update: '🔔', person: '👤', notes: '📝' };
+const DF_COLOR = { promo: '#ff6b8b', update: '#4fb8ff', person: '#3ddc97', notes: '#c9a6ff' };
 const SHOT = {
   reply: { color: '#ffd45e', glow: '#fff0a8' }, delete: { color: '#ff5d7a', glow: '#ff9aae' },
   archive: { color: '#4fb8ff', glow: '#a8dcff' }, keep: { color: '#3ddc97', glow: '#a6f5d2' },
 };
 const FIRE_KEYS = { h: 'reply', j: 'delete', k: 'archive', l: 'keep' };
-const OP_LABEL = { delete: '🗑 Move to Trash', archive: '📥 Archive', reply: '★ Star to reply later', keep: '👁 Keep in inbox, mark read' };
-// How well a shot fits an email: 2 perfect, 1 fine, 0 wrong, -1 refused (deleting a person costs a life).
+const OP_LABEL = { delete: '🗑 Move to Trash', archive: '📥 Archive', reply: '★ Star to reply later', keep: '👁 Keep in inbox, mark read', deletePeople: '🗑 Move to Trash: emails that look like they are from people' };
+// How well a shot fits an email: 2 perfect, 1 fine, 0 wrong. Who counts as a person is a guess, so a wrong
+// guess must cost little: deleting a "person" scores 0 and goes to the review unticked, it never costs a life.
+// Meeting notes are never deleted or archived: those shots do nothing.
 const FIT = {
   promo: { delete: 2, archive: 1, keep: 0, reply: 0 },
   update: { delete: 1, archive: 2, keep: 1, reply: 0 },
-  person: { delete: -1, archive: 1, keep: 2, reply: 2 },
+  person: { delete: 0, archive: 1, keep: 2, reply: 2 },
+  notes: { delete: 0, archive: 0, keep: 2, reply: 1 },
 };
 const CONTROLS = '<b>A D</b> move · <b>H</b> reply · <b>J</b> delete · <b>K</b> archive · <b>L</b> keep · <b>Q</b> finish';
 const backLabel = () => S.backend.backLabel || 'Back to mail';
@@ -186,7 +189,7 @@ function dfSpawn() {
 function spawnBoss() {
   // the sender with the most emails still waiting (not people) becomes the boss
   const counts = {};
-  DF.queue.forEach((t) => { if (t.kind !== 'person') counts[t.fromEmail] = (counts[t.fromEmail] || 0) + 1; });
+  DF.queue.forEach((t) => { if (t.kind === 'promo' || t.kind === 'update') counts[t.fromEmail] = (counts[t.fromEmail] || 0) + 1; });
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   if (!top || top[1] < 2) return false;
   const items = DF.queue.filter((t) => t.fromEmail === top[0]);
@@ -227,12 +230,23 @@ function hitCard(card, shot) {
   const k = card.t.kind, cx = card.x + card.w / 2, cy = card.y + card.h / 2;
   const fit = FIT[k][shot];
   DF.cards = DF.cards.filter((c) => c !== card);
-  if (fit < 0) {
-    // never delete a person: costs a life, the email is left untouched
-    loseLife(cx, cy, `${card.t.from} is a person! −❤`);
-    DF.wrong++;
+  if (k === 'notes' && (shot === 'delete' || shot === 'archive')) {
+    // meeting notes stay in the inbox: nothing is recorded, so nothing can be applied
+    DF.combo = 1; DF.wrong++;
     DF.done.push({ t: card.t, op: null });
-    $('#dfTicker').textContent = `😬 Don't delete people. ${card.t.from}'s email is left as it was.`;
+    DF.pops.push({ x: cx, y: cy - 8, text: 'Meeting notes stay +0', life: 1, color: '#c9a6ff' });
+    $('#dfTicker').textContent = `📝 Meeting notes are never deleted or archived. L keeps them, H stars them.`;
+    SFX.play('bad');
+    return;
+  }
+  if (k === 'person' && shot === 'delete') {
+    // probably a person: no points, and it waits unticked in the review in case the guess was wrong
+    DF.combo = 1; DF.wrong++; DF.cleared++;
+    DF.done.push({ t: card.t, op: 'deletePeople' });
+    burst(cx, cy, SHOT.delete.color, 8);
+    DF.pops.push({ x: cx, y: cy - 8, text: 'Looks like a person +0', life: 1, color: '#c9c9d9' });
+    $('#dfTicker').textContent = `👤 ${card.t.from} looks like a person. It goes to the review unticked: tick it there to really delete.`;
+    SFX.play('bad');
     return;
   }
   let pts;
@@ -455,7 +469,7 @@ function endDefense(won) {
   cancelAnimationFrame(DF.raf);
   const best = DF.best, newScore = DF.score > best.score, newCleared = DF.cleared > best.cleared;
   if (newScore || newCleared) store.set('defenseBest.' + DF.pace, { score: Math.max(best.score, DF.score), cleared: Math.max(best.cleared, DF.cleared) });
-  const groups = { delete: [], archive: [], reply: [], keep: [] };
+  const groups = { delete: [], archive: [], reply: [], keep: [], deletePeople: [] };
   DF.done.forEach((d) => { if (d.op) groups[d.op].push(d.t); });
   const rows = Object.entries(groups).filter(([, l]) => l.length);
   const shots = DF.right + DF.wrong;
@@ -467,8 +481,8 @@ function endDefense(won) {
     <div class="dim">${PACES[DF.pace].name} pace · ${newScore ? '🏆 New best score' : 'Best score ' + best.score}</div>
     <div class="df-cleared"><b>${DF.cleared}</b> emails cleared · ${newCleared ? '🏆 New best' : 'best ' + best.cleared}</div>
     <div class="t-stats"><div><b>${DF.wave}</b>wave</div><div><b>${acc}%</b>perfect calls</div><div><b>x${DF.maxCombo}</b>best combo</div><div><b>${DF.bossesBeaten}</b>bosses beaten</div><div><b>${DF.missed}</b>landed</div></div>
-    ${rows.length ? `<p id="dfIntro"><b>Nothing in your Gmail has changed yet.</b> Untick anything you don't want, then apply.</p>
-    <div class="df-groups">${rows.map(([op, list]) => `<details class="df-group"><summary><input type="checkbox" data-op="${op}" checked> <b>${OP_LABEL[op]}</b> · ${list.length} email${list.length > 1 ? 's' : ''}</summary>
+    ${rows.length ? `<p id="dfIntro"><b>Nothing in your Gmail has changed yet.</b> Untick anything you don't want, then apply.${groups.deletePeople.length ? ' Deleted emails that look like they are from people start unticked: open the group to check them.' : ''}</p>
+    <div class="df-groups">${rows.map(([op, list]) => `<details class="df-group"><summary><input type="checkbox" data-op="${op}"${op === 'deletePeople' ? '' : ' checked'}> <b>${OP_LABEL[op]}</b> · ${list.length} email${list.length > 1 ? 's' : ''}</summary>
       <ul>${list.map((t) => `<li><b>${esc(t.from)}</b> <span class="dim">${esc(t.subject || '(no subject)')}</span></li>`).join('')}</ul></details>`).join('')}</div>
     <div class="t-end-btns"><button id="dfApply" class="primary">Apply changes</button><button id="dfAgain">Play again</button><button id="dfDiscard">${backLabel()}</button></div>
     <p id="dfStatus" class="dim"></p>`
@@ -485,7 +499,7 @@ function endDefense(won) {
     const btns = [...el.querySelectorAll('.t-end-btns button')];
     btns.forEach((b) => (b.disabled = true));
     el.querySelectorAll('summary input').forEach((x) => (x.disabled = true));
-    const jobs = chosen.flatMap((op) => groups[op].map((t) => [t, op]));
+    const jobs = chosen.flatMap((op) => groups[op].map((t) => [t, op === 'deletePeople' ? 'delete' : op]));
     const say = (s) => { $('#dfStatus').textContent = s; };
     let failed = 0, note = 'Starred ones are waiting for your reply.';
     if (S.backend.applyAll) {
@@ -535,7 +549,7 @@ function dfAuto() {
   const aim = tgt ? tgt.x + tgt.w / 2 : DF.boss ? DF.boss.x + DF.boss.w / 2 : DF.W / 2;
   DF.keys.a = aim < DF.turret.x - 8; DF.keys.d = aim > DF.turret.x + 8;
   if (Math.abs(aim - DF.turret.x) < 30 && DF.cool <= 0 && !DF.queued) {
-    if (tgt && tgt.y > 60) fire({ promo: 'delete', update: 'archive', person: (tgt.t.subject || '').length % 2 ? 'reply' : 'keep' }[tgt.t.kind]);
+    if (tgt && tgt.y > 60) fire({ promo: 'delete', update: 'archive', person: (tgt.t.subject || '').length % 2 ? 'reply' : 'keep', notes: 'keep' }[tgt.t.kind]);
     else if (!tgt && DF.boss) fire('delete');
   }
 }

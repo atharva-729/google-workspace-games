@@ -11,12 +11,18 @@ Clear your Gmail by playing a game. The games run as **bookmarklets**: you drag 
 
 ## How the bookmarklet works
 - **Reading:** it reads the email rows Gmail has already drawn, switching through your inbox tabs (Promotions, Social, Updates, then back to your list). There are no API calls and no server.
-- **People vs. the rest:** a sender counts as a person if:
-  - you've written to them (read from your Sent list and kept in your browser for a day);
-  - or they're in a thread you're part of;
-  - or they use a personal mailbox (gmail.com, outlook.com, …) and aren't an automated address.
+- **People vs. the rest:** the game checks these in order:
+  - **Meeting notes** from Gemini are never deleted or archived, whatever tab Gmail put them in.
+  - **Gmail's own tabs** decide promotions and updates, when tabs are on.
+  - **Team senders aren't people,** even from your own company. The game looks for words in the address or the name: HR, Human Resources, IT, announcements, communications, helpdesk, payroll, tools like Darwinbox or Workday, noreply, and so on.
+  - **People:**
+    - anyone you've written to (read from your Sent list and kept in your browser for a day);
+    - anyone in a thread you're part of;
+    - a personal mailbox (gmail.com, outlook.com, …);
+    - a colleague on your own domain whose name looks like a person's.
+  - **Everything else** is an update.
 
-  Gmail's own tabs decide promotions and updates. Any other company counts as an update.
+  It's a guess, so a wrong guess costs little. In Mail Defense, deleting a "person" scores 0. That email waits in the review unticked, and it's only deleted if you tick it. In Breakout, people and meeting notes are steel bricks.
 - **Applying:** nothing changes until you review the results and press **Apply changes**. The game then ticks those rows and presses Gmail's own Delete, Archive, Mark as read or Add star, one batch per tab. Before pressing anything, it checks that exactly those rows are ticked.
 - **Inside Gmail's page:** Gmail enforces Trusted Types, so the game routes its HTML through its own policy and draws inside a shadow root.
 
