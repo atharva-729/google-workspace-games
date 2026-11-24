@@ -15,7 +15,7 @@ const BK_PACES = {
 };
 const BK_LEVEL_SECONDS = 20;
 const WALL_SIZE = 45; // breakable bricks per wall
-const BK_CONTROLS = '<b>A D</b> or mouse move · <b>Space</b> launch · <b>P</b> pause · <b>Q</b> finish · 👤 steel = people';
+const BK_CONTROLS = '<b>A D</b> or mouse move · <b>Space</b> launch · <b>P</b> pause · <b>Q</b> finish · <b>M</b> sound · 👤 steel = people';
 const bkBack = () => S.backend.backLabel || 'Back to mail';
 
 function bkHash(s) { let h = 7; for (const c of s || '') h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
@@ -57,7 +57,8 @@ function breakoutMenu(items) {
     Pick a pace: the ball keeps getting faster, then holds at its top speed.</p>
     <div class="df-levels">${Object.entries(BK_PACES).map(([id, p]) => { const b = bkBestFor(id); return `<button class="df-level${id === last ? ' last' : ''}" data-pace="${id}"><b><kbd>${p.key}</kbd> ${p.name}</b><small>${p.desc}</small><small>Best: ${b.score} pts · ${b.cleared} cleared</small></button>`; }).join('')}</div>
     <p class="dim">${BK_CONTROLS} · <b>Enter</b> plays your last pace</p>
-    <div class="t-end-btns"><button id="bkBack">${bkBack()}</button></div></div>`);
+    <div class="t-end-btns"><button id="bkBack">${bkBack()}</button></div></div>${SFX.button()}`);
+  SFX.bind(el);
   el.querySelectorAll('[data-pace]').forEach((b) => (b.onclick = () => pickBkPace(b.dataset.pace)));
   $('#bkBack').onclick = exitBreakout;
 }
@@ -74,11 +75,13 @@ function breakoutMenuKey(e) {
   const p = Object.keys(BK_PACES).find((id) => BK_PACES[id].key === e.key);
   if (p) { pickBkPace(p); return true; }
   if (e.key === 'Enter') { pickBkPace(BK.menu.last); return true; }
+  if (e.key === 'm' || e.key === 'M') { SFX.toggle(); return true; }
   return false;
 }
 
 function exitBreakout() {
   BK.on = false;
+  SFX.music(null);
   BK.menu = null;
   cancelAnimationFrame(BK.raf);
   $('#breakout').classList.add('hidden');
@@ -98,7 +101,8 @@ function setupBreakout(items, pace) {
       <div class="stat"><b id="bkLeft">0</b><span>left</span></div>
       <div class="bk-ticker" id="bkTicker">${BK_CONTROLS}</div>
       <button class="t-quit" id="bkQuit" title="Q or Esc">Finish</button><button class="t-quit" id="bkLeave">${bkBack()}</button></div>
-    <canvas id="bkCanvas"></canvas>`);
+    <canvas id="bkCanvas"></canvas>${SFX.button()}`);
+  SFX.bind(el);
   const cv = $('#bkCanvas'), dpr = window.devicePixelRatio || 1;
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
@@ -112,6 +116,7 @@ function setupBreakout(items, pace) {
     wideT: 0, keys: {}, last: performance.now(), best: bkBestFor(pace),
   });
   nextWall();
+  SFX.music('breakout');
   cv.addEventListener('mousemove', (e) => { const r = cv.getBoundingClientRect(); BK.paddle.x = Math.max(0, Math.min(W - BK.paddle.w, e.clientX - r.left - BK.paddle.w / 2)); });
   cv.addEventListener('click', launch);
   $('#bkQuit').onclick = () => endBreakout(false);
@@ -156,6 +161,7 @@ function nextWall() {
 function newBall() { BK.balls = [{ x: 0, y: 0, vx: 0, vy: 0, r: 7, stuck: true }]; BK.chain = 0; }
 function launch() {
   const v = bkSpeedNow().speed;
+  if (BK.balls.some((b) => b.stuck)) SFX.play('launch');
   BK.balls.forEach((b) => { if (b.stuck) { b.stuck = false; b.vx = v * 0.35; b.vy = -v * 0.94; } });
 }
 function aliveBreakable() { return BK.bricks.filter((b) => b.alive && !b.steel); }
@@ -173,6 +179,7 @@ function breakBrick(b, quiet) {
   b.alive = false;
   BK.broken.push(b.t);
   BK.chain++;
+  if (!quiet) SFX.play('brick');
   const pts = 10 * Math.min(BK.chain, 8);
   BK.score += pts;
   for (let i = 0; i < 12; i++) BK.parts.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, vx: (Math.random() - 0.5) * 320, vy: (Math.random() - 0.7) * 260, life: 0.7, c: b.color });
@@ -185,11 +192,12 @@ function breakBrick(b, quiet) {
   if (!aliveBreakable().length && !BK.clearT) BK.clearT = 0.4; // next wall (or the end) in 0.4 s of play
 }
 function wallCleared() {
-  if (BK.pool.length) { BK.score += 100; BK.pops.push({ x: BK.W / 2, y: BK.H / 2, text: 'Wall cleared! +100', life: 1.4 }); nextWall(); bkHud(); }
+  if (BK.pool.length) { SFX.play('wave'); BK.score += 100; BK.pops.push({ x: BK.W / 2, y: BK.H / 2, text: 'Wall cleared! +100', life: 1.4 }); nextWall(); bkHud(); }
   else { BK.over = true; endBreakout(true); }
 }
 
 function catchDrop(d) {
+  SFX.play('power');
   if (d.type === 'multi') {
     const extra = [];
     BK.balls.filter((b) => !b.stuck).forEach((b) => [-0.5, 0.5].forEach((a) => {
@@ -233,7 +241,7 @@ function bkUpdate(dt) {
   const inPlay = BK.balls.some((b) => !b.stuck);
   if (inPlay) BK.t += dt; // the ball only speeds up while it's moving
   const { speed, top } = bkSpeedNow();
-  if (top && !BK.topSpeed) { BK.topSpeed = true; BK.banner = { text: 'Top speed!', sub: 'it stays this fast now', life: 1.8 }; }
+  if (top && !BK.topSpeed) { BK.topSpeed = true; BK.banner = { text: 'Top speed!', sub: 'it stays this fast now', life: 1.8 }; SFX.play('power'); }
   BK.wideT = Math.max(0, BK.wideT - dt);
   const baseW = BK_PACES[BK.pace].paddle, targetW = BK.wideT > 0 ? baseW + 60 : baseW;
   if (P.w !== targetW) { P.x += (P.w - targetW) / 2; P.w = targetW; }
@@ -260,6 +268,7 @@ function bkUpdate(dt) {
         b.vx = speed * Math.sin(ang); b.vy = -speed * Math.cos(ang);
         b.y = P.y - b.r;
         BK.chain = 0;
+        SFX.play('paddle');
       }
       // bricks
       for (const k of BK.bricks) {
@@ -270,7 +279,7 @@ function bkUpdate(dt) {
         const ox = (b.x - (k.x + k.w / 2)) / (k.w / 2), oy = (b.y - (k.y + k.h / 2)) / (k.h / 2);
         if (Math.abs(ox) > Math.abs(oy)) { b.vx = Math.sign(ox || 1) * Math.abs(b.vx); b.x = ox > 0 ? k.x + k.w + b.r : k.x - b.r; }
         else { b.vy = Math.sign(oy || 1) * Math.abs(b.vy); b.y = oy > 0 ? k.y + k.h + b.r : k.y - b.r; }
-        if (k.steel) { k.flash = 0.25; $('#bkTicker').textContent = k.t.kind === 'notes' ? `📝 Meeting notes: steel. They stay in your inbox.` : `👤 ${k.t.from} is a person: steel. Their email stays as it is.`; }
+        if (k.steel) { k.flash = 0.25; SFX.play('steel'); $('#bkTicker').textContent = k.t.kind === 'notes' ? `📝 Meeting notes: steel. They stay in your inbox.` : `👤 ${k.t.from} is a person: steel. Their email stays as it is.`; }
         else breakBrick(k);
         break;
       }
@@ -280,6 +289,7 @@ function bkUpdate(dt) {
   BK.balls = BK.balls.filter((b) => b.y < H + 20);
   if (before && !BK.balls.length) {
     BK.lives--;
+    SFX.play('hurt');
     bkHud();
     if (BK.lives <= 0) { BK.over = true; setTimeout(() => endBreakout(false), 600); }
     else newBall();
@@ -317,7 +327,7 @@ function bkDraw() {
       [[4, 4], [k.w - 4, 4], [4, k.h - 4], [k.w - 4, k.h - 4]].forEach(([x, y]) => { c.beginPath(); c.arc(k.x + x, k.y + y, 1.6, 0, Math.PI * 2); c.fill(); });
     }
     c.save(); c.beginPath(); c.rect(k.x + 7, k.y, k.w - 14, k.h); c.clip();
-    c.fillStyle = k.steel ? '#ffffff' : 'rgba(255,255,255,.95)';
+    c.fillStyle = k.flash > 0 ? '#2f3542' : k.steel ? '#ffffff' : 'rgba(255,255,255,.95)';
     c.font = '600 11px "Segoe UI", system-ui, sans-serif';
     c.textAlign = 'left';
     c.fillText((k.steel ? (k.t.kind === 'notes' ? '📝 ' : '👤 ') : '') + (k.t.from || '?'), k.x + 8, k.y + k.h / 2 + 1);
@@ -354,6 +364,8 @@ function endBreakout(won) {
   BK.ended = true;
   BK.on = false;
   cancelAnimationFrame(BK.raf);
+  SFX.music(null);
+  SFX.play(won ? 'power' : 'wave');
   const best = BK.best, cleared = BK.broken.length, newScore = BK.score > best.score, newCleared = cleared > best.cleared;
   if (newScore || newCleared) store.set('breakoutBest.' + BK.pace, { score: Math.max(best.score, BK.score), cleared: Math.max(best.cleared, cleared) });
   // group what was smashed by sender; promotions go to Trash, the rest to Archive (you can switch either)
@@ -430,7 +442,8 @@ function breakoutKey(e, down = true) {
   if (k === 'arrowright' || k === 'd') { BK.keys.right = down; return true; }
   if (!down) return false;
   if (k === ' ') { launch(); return true; }
-  if (k === 'p') { BK.paused = !BK.paused; return true; }
+  if (k === 'p') { BK.paused = !BK.paused; SFX.music(BK.paused ? null : 'breakout'); return true; }
+  if (k === 'm') { SFX.toggle(); return true; }
   if (k === 'q' || k === 'escape') { endBreakout(false); return true; }
   return false;
 }

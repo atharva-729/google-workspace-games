@@ -9,6 +9,8 @@ Clear your Gmail by playing a game. The games run as **bookmarklets**: you drag 
 | 🛡️ **Mail Defense** | Your emails fall toward your inbox. Shoot each one before it lands: `H` reply, `J` delete, `K` archive, `L` keep. Move with `A`/`D`, finish with `Q`. Pick a pace (Relaxed, Normal, Fast): the emails speed up until its top speed, and you get one shot a second. Waves end with a boss, your noisiest sender, which hovers over you and shoots back. Each pace keeps two bests: points, and emails cleared. |
 | 🧱 **Promo Breakout** | Your inbox is a brick wall, one brick per email. Smash promotions and updates with the ball (`A`/`D` or the mouse, `Space` to launch, `Q` to finish). People are steel bricks, scattered at random: they never break, and their mail is never touched. Pick a pace: the ball speeds up until its top speed. Clearing a wall builds the next one from the rest of your mail. At the end, choose Trash or Archive for each sender. Each pace keeps two bests: points, and emails cleared. |
 
+Both games have simple sound effects and background music. They start muted; press `M` or the big button at the side to turn them on.
+
 ## How the bookmarklet works
 - **Reading:** it reads the email rows Gmail has already drawn, switching through your inbox tabs (Promotions, Social, Updates, then back to your list). There are no API calls and no server.
 - **People vs. the rest:** the game checks these in order:
@@ -55,7 +57,7 @@ Because the app stays in Testing, the grant expires after 7 days. When it does, 
 The extension paces its API calls and retries with backoff when Gmail asks it to slow down, so it stays under Gmail's per-user rate limit.
 
 ### Files
-`manifest.json` · `background.js` (opens the tab) · `app.html/css/js` (mail client UI) · `triage.js`, `breakout.js`, `defense.js` (the games) · `compose.js` (reply box and undo-send) · `gmail.js` (Gmail API backend) · `demo.js` (sample-data backend) · `bookmarklet/` (`page.js`, the Gmail-page wrapper shared by the games, and `build.js`) · `docs/` (the GitHub Pages site)
+`manifest.json` · `background.js` (opens the tab) · `app.html/css/js` (mail client UI) · `triage.js`, `breakout.js`, `defense.js` (the games) · `sound.js` (sound effects and music, shared by the games) · `compose.js` (reply box and undo-send) · `gmail.js` (Gmail API backend) · `demo.js` (sample-data backend) · `bookmarklet/` (`page.js`, the Gmail-page wrapper shared by the games, and `build.js`) · `docs/` (the GitHub Pages site)
 
 Test hook: open `app.html?demo&keys=gre` directly to replay keystrokes in demo mode.
 

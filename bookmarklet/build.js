@@ -14,27 +14,27 @@ const gameCss = () => read('../app.css').replace(/:root/g, ':host') + `
 .ia-check { --ia-ok: 1; position: absolute; }
 .bk-hud { top: 0; }`;
 
-const bundle = (game, glue) => `(() => {\nconst IA_CSS = ${JSON.stringify(gameCss())};\n${read('page.js')}\n${read(game)}\n${glue}\n})();`;
+const bundle = (game, glue) => `(() => {\nconst IA_CSS = ${JSON.stringify(gameCss())};\n${read('page.js')}\n${read('../sound.js')}\n${read(game)}\n${glue}\n})();`;
 
 const BOOKMARKLETS = [
   {
     name: '🛡️ Mail Defense', id: 'defense',
     image: 'defense.png', alt: 'Mail Defense: emails fall toward your inbox while you shoot them from the bottom',
     what: 'Your emails fall toward your inbox. Shoot each one with the right decision before it lands. Pick a pace: the emails keep speeding up until its top speed, and you get one shot a second. Waves end with a boss, your noisiest sender, which hovers over you and shoots back. Beat your best score and your most emails cleared. It reads your inbox tabs first, which takes a few seconds.',
-    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move (or the arrow keys)'], ['<kbd>H</kbd>', 'reply: stars it so you reply later'], ['<kbd>J</kbd>', 'delete'], ['<kbd>K</kbd>', 'archive'], ['<kbd>L</kbd>', 'keep: stays in the inbox, marked read'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
+    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move (or the arrow keys)'], ['<kbd>H</kbd>', 'reply: stars it so you reply later'], ['<kbd>J</kbd>', 'delete'], ['<kbd>K</kbd>', 'archive'], ['<kbd>L</kbd>', 'keep: stays in the inbox, marked read'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>M</kbd>', 'sound and music on or off (off to start)'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
     code: () => bundle('../defense.js', `const BK = { on: false };
 const GAME = { stop() { DF.on = false; DF.menu = null; cancelAnimationFrame(DF.raf); }, key: (e, down) => (DF.on ? defenseKey(e, down) : down && defenseMenuKey(e)) };
-if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense, pickPace, paceNow, fire };
+if (window.__iaAnyHost) window.__iaTest = { DF, dfUpdate, dfAuto, dfDraw, endDefense, pickPace, paceNow, fire, SFX };
 startDefense();`),
   },
   {
     name: '🧱 Promo Breakout', id: 'breakout',
     image: 'breakout.png', alt: 'Promo Breakout: a brick wall of emails, with people as steel bricks, and a ball and paddle below',
     what: 'Your inbox is a brick wall: each brick is an email, named by its sender. Smash promotions and updates. <mark>People are steel bricks</mark>, scattered through the wall: they never break, and their mail is never touched. Pick a pace: the ball keeps speeding up until its top speed. Clear a wall and the next one is built from the rest of your mail. Catch drops for multi-ball, a wide paddle, or a sweep of one sender. At the end, pick Trash or Archive for each sender.',
-    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move the paddle (or the arrow keys, or the mouse)'], ['<kbd>Space</kbd>', 'launch the ball (or click)'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
+    controls: [['<kbd>A</kbd> <kbd>D</kbd>', 'move the paddle (or the arrow keys, or the mouse)'], ['<kbd>Space</kbd>', 'launch the ball (or click)'], ['<kbd>Q</kbd> / <kbd>Esc</kbd>', 'finish and review'], ['<kbd>P</kbd>', 'pause'], ['<kbd>M</kbd>', 'sound and music on or off (off to start)'], ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', 'pick a pace: Relaxed, Normal, Fast']],
     code: () => bundle('../breakout.js', `const DF = { on: false };
 const GAME = { stop() { BK.on = false; BK.menu = null; cancelAnimationFrame(BK.raf); }, key: (e, down) => (BK.on ? breakoutKey(e, down) : down && breakoutMenuKey(e)) };
-if (window.__iaAnyHost) window.__iaTest = { BK, bkUpdate, bkAuto, bkDraw, endBreakout, pickBkPace, bkSpeedNow };
+if (window.__iaAnyHost) window.__iaTest = { BK, bkUpdate, bkAuto, bkDraw, endBreakout, pickBkPace, bkSpeedNow, SFX };
 startBreakout();`),
   },
 ];

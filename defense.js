@@ -22,7 +22,7 @@ const FIT = {
   person: { delete: 0, archive: 1, keep: 2, reply: 2 },
   notes: { delete: 0, archive: 0, keep: 2, reply: 1 },
 };
-const CONTROLS = '<b>A D</b> move · <b>H</b> reply · <b>J</b> delete · <b>K</b> archive · <b>L</b> keep · <b>Q</b> finish';
+const CONTROLS = '<b>A D</b> move · <b>H</b> reply · <b>J</b> delete · <b>K</b> archive · <b>L</b> keep · <b>Q</b> finish · <b>M</b> sound';
 const backLabel = () => S.backend.backLabel || 'Back to mail';
 // Pace: [start, added per level, ceiling]. A level is LEVEL_SECONDS of play. Speed only ever goes up, then holds.
 const PACES = {
@@ -41,29 +41,6 @@ function bestFor(pace) {
   const old = store.get('defenseBest'); // single best from before paces existed counts as Normal
   return { score: b.score || (pace === 'normal' && typeof old === 'number' ? old : 0), cleared: b.cleared || 0 };
 }
-
-// ---------------------------------------------------------------- sound (tiny WebAudio blips)
-const SFX = {
-  ctx: null,
-  play(type) {
-    try {
-      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (this.ctx.state === 'suspended') this.ctx.resume();
-      const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain();
-      const P = {
-        delete: ['square', 520, 260, 0.07, 0.04], archive: ['square', 380, 300, 0.07, 0.035],
-        keep: ['triangle', 420, 700, 0.08, 0.05], reply: ['triangle', 560, 1000, 0.09, 0.05],
-        good: ['triangle', 660, 1320, 0.12, 0.07], bad: ['sawtooth', 180, 90, 0.25, 0.06],
-        hurt: ['sawtooth', 140, 60, 0.35, 0.08], boss: ['square', 200, 120, 0.1, 0.05],
-        bossdie: ['sawtooth', 300, 40, 0.7, 0.09], power: ['triangle', 440, 1760, 0.35, 0.07], wave: ['sine', 330, 660, 0.4, 0.06],
-      }[type];
-      if (!P) return;
-      o.type = P[0]; o.frequency.setValueAtTime(P[1], t); o.frequency.exponentialRampToValueAtTime(P[2], t + P[3]);
-      g.gain.setValueAtTime(P[4], t); g.gain.exponentialRampToValueAtTime(0.0001, t + P[3]);
-      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + P[3] + 0.02);
-    } catch {}
-  },
-};
 
 async function startDefense() {
   if (T.active || BK.on || BK.loading || DF.on || DF.loading) return;
@@ -96,7 +73,8 @@ function defenseMenu(items) {
     <p class="dim">${items.length} emails incoming. Pick a pace: it keeps getting faster, then holds at its top speed.</p>
     <div class="df-levels">${Object.entries(PACES).map(([id, p]) => { const b = bestFor(id); return `<button class="df-level${id === last ? ' last' : ''}" data-pace="${id}"><b><kbd>${p.key}</kbd> ${p.name}</b><small>${p.desc}</small><small>Best: ${b.score} pts · ${b.cleared} cleared</small></button>`; }).join('')}</div>
     <p class="dim">${CONTROLS} · one shot a second · <b>Enter</b> plays your last pace</p>
-    <div class="t-end-btns"><button id="dfBack">${backLabel()}</button></div></div>`);
+    <div class="t-end-btns"><button id="dfBack">${backLabel()}</button></div></div>${SFX.button()}`);
+  SFX.bind(el);
   el.querySelectorAll('[data-pace]').forEach((b) => (b.onclick = () => pickPace(b.dataset.pace)));
   $('#dfBack').onclick = exitDefense;
 }
@@ -113,11 +91,13 @@ function defenseMenuKey(e) {
   const p = Object.keys(PACES).find((id) => PACES[id].key === e.key);
   if (p) { pickPace(p); return true; }
   if (e.key === 'Enter') { pickPace(DF.menu.last); return true; }
+  if (e.key === 'm' || e.key === 'M') { SFX.toggle(); return true; }
   return false;
 }
 
 function exitDefense() {
   DF.on = false;
+  SFX.music(null);
   DF.menu = null;
   cancelAnimationFrame(DF.raf);
   $('#defense').classList.add('hidden');
@@ -138,7 +118,8 @@ function setupDefense(queue, pace) {
       <div class="stat"><b id="dfLeft">0</b><span>incoming</span></div>
       <div class="bk-ticker" id="dfTicker">${CONTROLS}</div>
       <button class="t-quit" id="dfQuit" title="Q or Esc">Finish</button><button class="t-quit" id="dfLeave">${backLabel()}</button></div>
-    <canvas id="dfCanvas"></canvas>`);
+    <canvas id="dfCanvas"></canvas>${SFX.button()}`);
+  SFX.bind(el);
   const cv = $('#dfCanvas'), dpr = window.devicePixelRatio || 1;
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
@@ -152,6 +133,7 @@ function setupDefense(queue, pace) {
     best: bestFor(pace), last: performance.now(),
   });
   startWave(1);
+  SFX.music('defense');
   $('#dfQuit').onclick = () => endDefense(false);
   $('#dfLeave').onclick = exitDefense;
   dfHud();
@@ -467,6 +449,7 @@ function endDefense(won) {
   if (!DF.on || DF.ended) return;
   DF.ended = true; DF.on = false;
   cancelAnimationFrame(DF.raf);
+  SFX.music(null);
   const best = DF.best, newScore = DF.score > best.score, newCleared = DF.cleared > best.cleared;
   if (newScore || newCleared) store.set('defenseBest.' + DF.pace, { score: Math.max(best.score, DF.score), cleared: Math.max(best.cleared, DF.cleared) });
   const groups = { delete: [], archive: [], reply: [], keep: [], deletePeople: [] };
@@ -536,7 +519,8 @@ function defenseKey(e, down = true) {
   if (k === 'a' || k === 'd' || k === 'arrowleft' || k === 'arrowright') { DF.keys[k] = down; return true; }
   if (FIRE_KEYS[k]) { if (down && !DF.keys[k]) fire(FIRE_KEYS[k]); DF.keys[k] = down; return true; }
   if (!down) return false;
-  if (k === 'p') { DF.paused = !DF.paused; return true; }
+  if (k === 'p') { DF.paused = !DF.paused; SFX.music(DF.paused ? null : 'defense'); return true; }
+  if (k === 'm') { SFX.toggle(); return true; }
   if (k === 'q' || k === 'escape') { endDefense(false); return true; }
   return false;
 }

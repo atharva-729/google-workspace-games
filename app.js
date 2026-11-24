@@ -408,10 +408,10 @@ const KEYBARS = {
   triage: [['r', 'reply'], ['Space', 'read & keep'], ['e', 'archive'], ['d', 'delete'], ['s', 'star'], ['l', 'later'], ['Shift+D / E', 'delete / archive all from sender'], ['z', 'undo'], ['Esc', 'finish']],
   compose: [['Ctrl+Enter', 'send'], ['Alt+1–5', 'insert quick reply'], ['Esc', 'cancel'], ['z', 'undo send (after sending, 5 s)']],
   end: [['Enter / Esc', 'back to mail']],
-  breakout: [['A / D / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['Q / Esc', 'finish & review'], ['👤', 'steel = people, never break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
-  bkmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['Esc', 'back to mail']],
-  defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['P', 'pause'], ['Q / Esc', 'finish & review']],
-  dfmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['Esc', 'back to mail']],
+  breakout: [['A / D / mouse', 'move paddle'], ['Space / click', 'launch'], ['P', 'pause'], ['M', 'sound'], ['Q / Esc', 'finish & review'], ['👤', 'steel = people, never break'], ['⚪ ↔ 🧹', 'multi-ball · wide · sweep sender']],
+  bkmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['M', 'sound'], ['Esc', 'back to mail']],
+  defense: [['A / D', 'move'], ['H', 'reply (star)'], ['J', 'delete'], ['K', 'archive'], ['L', 'keep (mark read)'], ['P', 'pause'], ['M', 'sound'], ['Q / Esc', 'finish & review']],
+  dfmenu: [['1 2 3', 'pick a pace'], ['Enter', 'your last pace'], ['M', 'sound'], ['Esc', 'back to mail']],
   review: [['Q / Esc', 'back to mail'], ['', 'nothing changes in Gmail until you press Apply']],
 };
 let keybarMode = null;

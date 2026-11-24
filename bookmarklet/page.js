@@ -48,6 +48,7 @@ const $ = (s) => root.querySelector(s);
 
 function closeArcade() {
   GAME.stop();
+  SFX.music(null);
   ['keydown', 'keyup', 'keypress'].forEach((t) => window.removeEventListener(t, onKey, true));
   host.remove();
 }
